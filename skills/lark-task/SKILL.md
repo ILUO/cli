@@ -12,7 +12,7 @@ metadata:
 
 **CRITICAL — 开始前 MUST 先用 Read 工具读取 [`../lark-shared/SKILL.md`](../lark-shared/SKILL.md)，其中包含认证、权限处理**
 
-> **搜索技巧**：如果用户的查询只指定了任务名称（例如“完成任务龙虾一号”），请直接使用 `+get-my-tasks --query "龙虾一号"` 命令搜索（不要带 `--complete` 参数，这样可以同时搜索未完成和已完成的任务）。
+> **搜索技巧**：如果用户提供了模糊任务查询词（例如任务名称、关键词、片段描述），统一优先使用 `+search --query ...`。只有当用户没有提供 `query`，而是明确表达“我负责的任务”或“与我相关的任务”时，才分别考虑使用 `+get-my-tasks` 或 `+get-related-tasks`。
 > **用户身份识别**：在用户身份（user identity）场景下，如果用户提到了“我”（例如“分配给我”、“由我创建”），请默认获取当前登录用户的 `open_id` 作为对应的参数值。
 > **术语理解**：如果用户提到 “todo”（待办），应当思考其是否是指“task”（任务），并优先尝试使用本 Skill 提供的命令来处理。
 > **友好输出**：在输出任务（或清单）的执行结果给用户时，建议同时提取并输出命令返回结果中的 `url` 字段（任务链接），以便用户可以直接点击跳转查看详情。
@@ -25,7 +25,8 @@ metadata:
 
 > **查询注意**：
 > 1. 在输出任务详情时，如果需要渲染负责人、创建人等人员字段，除了展示 `id` (例如 open_id) 外，还必须通过其他方式（例如调用通讯录技能）尝试获取并展示这个人的真实名字，以便用户更容易识别。
-> 2. 在输出任务详情时，如果需要渲染创建时间、截止时间等字段，需要使用本地时区来渲染（格式为2006-01-02 15:04:05）。
+> 2. 在输出清单详情时，如果需要渲染 owner、member、角色成员等人员字段，也必须像任务成员展示一样，除了展示 `id` 外，尽量解析并展示对应人员的真实名字。
+> 3. 在输出任务或清单详情时，如果需要渲染创建时间、截止时间等字段，需要使用本地时区来渲染（格式为2006-01-02 15:04:05）。
 
 
 ## Shortcuts
@@ -39,7 +40,12 @@ metadata:
 - [`+followers`](./references/lark-task-followers.md) — Manage task followers
 - [`+reminder`](./references/lark-task-reminder.md) — Manage task reminders
 - [`+get-my-tasks`](./references/lark-task-get-my-tasks.md) — List tasks assigned to me
+- [`+get-related-tasks`](./references/lark-task-get-related-tasks.md) — List tasks related to me
+- [`+search`](./references/lark-task-search.md) — Search tasks
+- [`+subscribe_event`](./references/lark-task-subscribe-event.md) — Subscribe to task events
+- [`+set-ancestor`](./references/lark-task-set-ancestor.md) — Set or clear a task ancestor
 - [`+tasklist-create`](./references/lark-task-tasklist-create.md) — Create a tasklist and batch add tasks
+- [`+tasklist-search`](./references/lark-task-tasklist-search.md) — Search tasklists
 - [`+tasklist-task-add`](./references/lark-task-tasklist-task-add.md) — Add existing tasks to a tasklist
 - [`+tasklist-members`](./references/lark-task-tasklist-members.md) — Manage tasklist members
 
@@ -102,4 +108,3 @@ lark-cli task <resource> <method> [flags] # 调用 API
 | `subtasks.list` | `task:task:read` |
 | `members.add` | `task:task:write` |
 | `members.remove` | `task:task:write` |
-
