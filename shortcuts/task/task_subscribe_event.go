@@ -5,6 +5,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,7 +21,7 @@ var SubscribeTaskEvent = common.Shortcut{
 	Description: "subscribe to task events",
 	Risk:        "write",
 	Scopes:      []string{"task:task:read"},
-	AuthTypes:   []string{"user"},
+	AuthTypes:   []string{"user", "bot"},
 	HasFormat:   true,
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		return common.NewDryRunAPI().
@@ -30,12 +31,18 @@ var SubscribeTaskEvent = common.Shortcut{
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		queryParams := make(larkcore.QueryParams)
 		queryParams.Set("user_id_type", "open_id")
-		_, err := runtime.DoAPI(&larkcore.ApiReq{
+		apiResp, err := runtime.DoAPI(&larkcore.ApiReq{
 			HttpMethod:  http.MethodPost,
 			ApiPath:     "/open-apis/task/v2/task_v2/task_subscription",
 			QueryParams: queryParams,
 		})
-		if err != nil {
+		var result map[string]interface{}
+		if err == nil {
+			if parseErr := json.Unmarshal(apiResp.RawBody, &result); parseErr != nil {
+				return WrapTaskError(ErrCodeTaskInternalError, fmt.Sprintf("failed to parse response: %v", parseErr), "subscribe task events")
+			}
+		}
+		if _, err := HandleTaskApiResult(result, err, "subscribe task events"); err != nil {
 			return err
 		}
 
