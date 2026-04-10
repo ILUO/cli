@@ -5,7 +5,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/larksuite/cli/internal/client"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/credential"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/internal/util"
@@ -147,10 +147,10 @@ func NewCmdServiceMethod(f *cmdutil.Factory, spec, method map[string]interface{}
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.Params, "params", "", "URL/query parameters JSON")
+	cmd.Flags().StringVar(&opts.Params, "params", "", "URL/query parameters JSON (supports - for stdin)")
 	switch httpMethod {
 	case "POST", "PUT", "PATCH", "DELETE":
-		cmd.Flags().StringVar(&opts.Data, "data", "", "request body JSON")
+		cmd.Flags().StringVar(&opts.Data, "data", "", "request body JSON (supports - for stdin)")
 	}
 	cmd.Flags().StringVar(&asStr, "as", "auto", "identity type: user | bot | auto (default)")
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "output file path for binary responses")
@@ -169,13 +169,20 @@ func NewCmdServiceMethod(f *cmdutil.Factory, spec, method map[string]interface{}
 	})
 
 	cmdutil.SetTips(cmd, registry.GetStrSliceFromMap(method, "tips"))
+	if tokens, ok := method["accessTokens"].([]interface{}); ok && len(tokens) > 0 {
+		cmdutil.SetSupportedIdentities(cmd, cmdutil.AccessTokensToIdentities(tokens))
+	}
 
 	return cmd
 }
 
 func serviceMethodRun(opts *ServiceMethodOptions) error {
 	f := opts.Factory
-	opts.As = f.ResolveAs(opts.Cmd, opts.As)
+	opts.As = f.ResolveAs(opts.Ctx, opts.Cmd, opts.As)
+
+	if err := f.CheckStrictMode(opts.Ctx, opts.As); err != nil {
+		return err
+	}
 
 	// Check if this API method supports the resolved identity.
 	if tokens, ok := opts.Method["accessTokens"].([]interface{}); ok && len(tokens) > 0 {
@@ -191,7 +198,7 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 		return err
 	}
 
-	config, err := f.ResolveConfig(opts.As)
+	config, err := f.Config()
 	if err != nil {
 		return err
 	}
@@ -200,7 +207,7 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 
 	scopes, _ := opts.Method["scopes"].([]interface{})
 	if !opts.As.IsBot() {
-		if err := checkServiceScopes(config, opts.Method, scopes); err != nil {
+		if err := checkServiceScopes(opts.Ctx, f.Credential, opts.As, config, opts.Method, scopes); err != nil {
 			return err
 		}
 	}
@@ -242,29 +249,35 @@ func serviceMethodRun(opts *ServiceMethodOptions) error {
 		JqExpr:     opts.JqExpr,
 		Out:        out,
 		ErrOut:     f.IOStreams.ErrOut,
+		FileIO:     f.ResolveFileIO(opts.Ctx),
 		CheckError: checkErr,
 	})
 }
 
 // checkServiceScopes pre-checks user scopes before making the API call.
-func checkServiceScopes(config *core.CliConfig, method map[string]interface{}, scopes []interface{}) error {
+func checkServiceScopes(ctx context.Context, cred *credential.CredentialProvider, identity core.Identity, config *core.CliConfig, method map[string]interface{}, scopes []interface{}) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	result, err := cred.ResolveToken(ctx, credential.NewTokenSpec(identity, config.AppID))
+	if err != nil || result == nil || result.Scopes == "" {
+		return nil //nolint:nilerr // skip scope check when token resolution fails or has no scopes
+	}
+
 	requiredScopes, hasRequired := method["requiredScopes"].([]interface{})
 
 	if hasRequired && len(requiredScopes) > 0 {
 		// Strict: ALL requiredScopes must be present
-		stored := auth.GetStoredToken(config.AppID, config.UserOpenId)
-		if stored != nil {
-			required := make([]string, 0, len(requiredScopes))
-			for _, s := range requiredScopes {
-				if str, ok := s.(string); ok {
-					required = append(required, str)
-				}
+		required := make([]string, 0, len(requiredScopes))
+		for _, s := range requiredScopes {
+			if str, ok := s.(string); ok {
+				required = append(required, str)
 			}
-			if missing := auth.MissingScopes(stored.Scope, required); len(missing) > 0 {
-				return output.ErrWithHint(output.ExitAuth, "missing_scope",
-					fmt.Sprintf("missing required scope(s): %s", strings.Join(missing, ", ")),
-					fmt.Sprintf("run `lark-cli auth login --scope \"%s\"` in the background. It blocks and outputs a verification URL — retrieve the URL and open it in a browser to complete login.", strings.Join(missing, " ")))
-			}
+		}
+		if missing := auth.MissingScopes(result.Scopes, required); len(missing) > 0 {
+			return output.ErrWithHint(output.ExitAuth, "missing_scope",
+				fmt.Sprintf("missing required scope(s): %s", strings.Join(missing, ", ")),
+				fmt.Sprintf("run `lark-cli auth login --scope \"%s\"` in the background. It blocks and outputs a verification URL — retrieve the URL and open it in a browser to complete login.", strings.Join(missing, " ")))
 		}
 		return nil
 	}
@@ -274,16 +287,12 @@ func checkServiceScopes(config *core.CliConfig, method map[string]interface{}, s
 	}
 
 	// Default: ANY one of the declared scopes is sufficient
-	stored := auth.GetStoredToken(config.AppID, config.UserOpenId)
-	if stored == nil {
-		return nil
-	}
-	grantedScopes := make(map[string]bool)
-	for _, s := range strings.Fields(stored.Scope) {
-		grantedScopes[s] = true
+	grantedSet := make(map[string]bool)
+	for _, s := range strings.Fields(result.Scopes) {
+		grantedSet[s] = true
 	}
 	for _, s := range scopes {
-		if str, ok := s.(string); ok && grantedScopes[str] {
+		if str, ok := s.(string); ok && grantedSet[str] {
 			return nil
 		}
 	}
@@ -300,13 +309,15 @@ func buildServiceRequest(opts *ServiceMethodOptions) (client.RawApiRequest, erro
 	schemaPath := opts.SchemaPath
 	httpMethod := registry.GetStrFromMap(method, "httpMethod")
 
-	var params map[string]interface{}
-	if opts.Params != "" {
-		if err := json.Unmarshal([]byte(opts.Params), &params); err != nil {
-			return client.RawApiRequest{}, output.ErrValidation("--params invalid JSON format")
-		}
-	} else {
-		params = map[string]interface{}{}
+	// stdin is an io.Reader consumed at most once. Only one of --params/--data
+	// may use "-" (stdin); the conflict check below prevents silent data loss.
+	stdin := opts.Factory.IOStreams.In
+	if opts.Params == "-" && opts.Data == "-" {
+		return client.RawApiRequest{}, output.ErrValidation("--params and --data cannot both read from stdin (-)")
+	}
+	params, err := cmdutil.ParseJSONMap(opts.Params, "--params", stdin)
+	if err != nil {
+		return client.RawApiRequest{}, err
 	}
 
 	url := registry.GetStrFromMap(spec, "servicePath") + "/" + registry.GetStrFromMap(method, "path")
@@ -355,7 +366,7 @@ func buildServiceRequest(opts *ServiceMethodOptions) (client.RawApiRequest, erro
 		}
 	}
 
-	data, err := cmdutil.ParseOptionalBody(httpMethod, opts.Data)
+	data, err := cmdutil.ParseOptionalBody(httpMethod, opts.Data, stdin)
 	if err != nil {
 		return client.RawApiRequest{}, err
 	}

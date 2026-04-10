@@ -19,14 +19,20 @@ By default, the command will automatically paginate up to 20 times. Use `--page-
 # Search for a specific task by name
 lark-cli task +get-my-tasks --query "Lobster No. 1"
 
-# Get my incomplete tasks (fetches up to 20 pages by default)
+# Get all my tasks (fetches up to 20 pages by default)
 lark-cli task +get-my-tasks
 
-# Fetch all tasks (up to 40 pages)
+# Get my incomplete tasks (fetches up to 20 pages by default)
+lark-cli task +get-my-tasks --complete=false
+
+# Fetch all my tasks (up to 40 pages)
 lark-cli task +get-my-tasks --page-all
 
 # Fetch up to 10 pages
 lark-cli task +get-my-tasks --page-limit 10
+
+# Resume from a known page token
+lark-cli task +get-my-tasks --page-token "pt_xxx"
 ```
 
 ## Parameters
@@ -40,6 +46,7 @@ lark-cli task +get-my-tasks --page-limit 10
 | `--due-end <string>` | No | Query tasks with a due date before this time. Supports date: `YYYY-MM-DD`, relative: `-2d`, or ms timestamp. |
 | `--page-all` | No | Automatically paginate through all pages (max 40). |
 | `--page-limit <int>` | No | Max page limit (default 20). |
+| `--page-token <string>` | No | Start from the specified page token (useful for resuming a previous query). |
 
 ## Workflow
 

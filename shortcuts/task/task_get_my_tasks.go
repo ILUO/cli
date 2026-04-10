@@ -29,12 +29,13 @@ var GetMyTasks = common.Shortcut{
 
 	Flags: []common.Flag{
 		{Name: "query", Desc: "search for tasks by summary (exact match first, then partial match)"},
-		{Name: "complete", Type: "bool", Desc: "if true, query completed tasks; default is false"},
+		{Name: "complete", Type: "bool", Desc: "if true, query completed tasks;if false, query incompleted tasks; if not provided, both completed and incompleted tasks are queried."},
 		{Name: "created_at", Desc: "query tasks created after this time (date/relative/ms)"},
 		{Name: "due-start", Desc: "query tasks with due date after this time (date/relative/ms)"},
 		{Name: "due-end", Desc: "query tasks with due date before this time (date/relative/ms)"},
 		{Name: "page-all", Type: "bool", Desc: "automatically paginate through all pages (max 40)"},
 		{Name: "page-limit", Type: "int", Default: "20", Desc: "max page limit (default 20, max 40 with --page-all)"},
+		{Name: "page-token", Desc: "start from the specified page token"},
 	},
 
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
@@ -47,6 +48,9 @@ var GetMyTasks = common.Shortcut{
 		}
 		if runtime.Cmd.Flags().Changed("complete") {
 			params["completed"] = runtime.Bool("complete")
+		}
+		if pageToken := runtime.Str("page-token"); pageToken != "" {
+			params["page_token"] = pageToken
 		}
 
 		return d.GET("/open-apis/task/v2/tasks").Params(params)
@@ -65,6 +69,9 @@ var GetMyTasks = common.Shortcut{
 			} else {
 				queryParams.Set("completed", "false")
 			}
+		}
+		if pageToken := runtime.Str("page-token"); pageToken != "" {
+			queryParams.Set("page_token", pageToken)
 		}
 
 		// parse time flags to ms timestamp if provided

@@ -5,7 +5,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -44,17 +43,6 @@ type APIOptions struct {
 	DryRun    bool
 }
 
-func parseJsonOpt(input, label string) (map[string]interface{}, error) {
-	if input == "" {
-		return nil, nil
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(input), &result); err != nil {
-		return nil, output.ErrValidation("%s invalid format, expected JSON object", label)
-	}
-	return result, nil
-}
-
 var urlPrefixRe = regexp.MustCompile(`https?://[^/]+(/open-apis/.+)`)
 
 func normalisePath(raw string) string {
@@ -88,8 +76,8 @@ func NewCmdApi(f *cmdutil.Factory, runF func(*APIOptions) error) *cobra.Command 
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.Params, "params", "", "query parameters JSON")
-	cmd.Flags().StringVar(&opts.Data, "data", "", "request body JSON")
+	cmd.Flags().StringVar(&opts.Params, "params", "", "query parameters JSON (supports - for stdin)")
+	cmd.Flags().StringVar(&opts.Data, "data", "", "request body JSON (supports - for stdin)")
 	cmd.Flags().StringVar(&asStr, "as", "auto", "identity type: user | bot | auto (default)")
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "output file path for binary responses")
 	cmd.Flags().BoolVar(&opts.PageAll, "page-all", false, "automatically paginate through all pages")
@@ -118,19 +106,19 @@ func NewCmdApi(f *cmdutil.Factory, runF func(*APIOptions) error) *cobra.Command 
 
 // buildAPIRequest validates flags and builds a RawApiRequest.
 func buildAPIRequest(opts *APIOptions) (client.RawApiRequest, error) {
-	params, err := parseJsonOpt(opts.Params, "--params")
+	// stdin is an io.Reader consumed at most once. Only one of --params/--data
+	// may use "-" (stdin); the conflict check below prevents silent data loss.
+	stdin := opts.Factory.IOStreams.In
+	if opts.Params == "-" && opts.Data == "-" {
+		return client.RawApiRequest{}, output.ErrValidation("--params and --data cannot both read from stdin (-)")
+	}
+	params, err := cmdutil.ParseJSONMap(opts.Params, "--params", stdin)
 	if err != nil {
 		return client.RawApiRequest{}, err
 	}
-	if params == nil {
-		params = map[string]interface{}{}
-	}
-	var data interface{}
-	if opts.Data != "" {
-		data, err = parseJsonOpt(opts.Data, "--data")
-		if err != nil {
-			return client.RawApiRequest{}, err
-		}
+	data, err := cmdutil.ParseOptionalBody(opts.Method, opts.Data, stdin)
+	if err != nil {
+		return client.RawApiRequest{}, err
 	}
 	if opts.PageSize > 0 {
 		params["page_size"] = opts.PageSize
@@ -152,7 +140,11 @@ func buildAPIRequest(opts *APIOptions) (client.RawApiRequest, error) {
 
 func apiRun(opts *APIOptions) error {
 	f := opts.Factory
-	opts.As = f.ResolveAs(opts.Cmd, opts.As)
+	opts.As = f.ResolveAs(opts.Ctx, opts.Cmd, opts.As)
+
+	if err := f.CheckStrictMode(opts.Ctx, opts.As); err != nil {
+		return err
+	}
 
 	if opts.PageAll && opts.Output != "" {
 		return output.ErrValidation("--output and --page-all are mutually exclusive")
@@ -166,7 +158,7 @@ func apiRun(opts *APIOptions) error {
 		return err
 	}
 
-	config, err := f.ResolveConfig(opts.As)
+	config, err := f.Config()
 	if err != nil {
 		return err
 	}
@@ -195,7 +187,7 @@ func apiRun(opts *APIOptions) error {
 
 	resp, err := ac.DoAPI(opts.Ctx, request)
 	if err != nil {
-		return output.MarkRaw(output.ErrNetwork("API call failed: %v", err))
+		return output.MarkRaw(client.WrapDoAPIError(err))
 	}
 	err = client.HandleResponse(resp, client.ResponseOptions{
 		OutputPath: opts.Output,
@@ -203,6 +195,7 @@ func apiRun(opts *APIOptions) error {
 		JqExpr:     opts.JqExpr,
 		Out:        out,
 		ErrOut:     f.IOStreams.ErrOut,
+		FileIO:     f.ResolveFileIO(opts.Ctx),
 	})
 	// MarkRaw tells root error handler to skip enrichPermissionError,
 	// preserving the original API error detail (log_id, troubleshooter, etc.).
