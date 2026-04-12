@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.9] - 2026-04-11
+
+### Features
+
+- Add attendance `user_task.query` (#405)
+- Support minutes search (#359)
+- **slides**: Add slides `+create` shortcut with `--slides` one-step creation (#389)
+- **slides**: Return presentation URL in slides `+create` output (#425)
+- **sheets**: Add dimension shortcuts for row/column operations (#413)
+- **sheets**: Add cell operation shortcuts for merge, replace, and style (#412)
+- **drive**: Add drive folder delete shortcut with async task polling (#415)
+
+### Documentation
+
+- **drive**: Add guide for granting document permission to current bot (#414)
+
+## [v1.0.8] - 2026-04-10
+
+### Features
+
+- Add `update` command with self-update, verification, and rollback (#391)
+- Add `--file` flag for multipart/form-data file uploads (#395)
+- Support file comment reply reactions (#380)
+- **base**: Add `+dashboard-arrange` command for auto-arranging dashboard blocks layout and `text` block type with Markdown support (#388)
+- **base**: Add record batch `+add` / `+set` shortcuts (#277)
+- **base**: Add `+record-search` for keyword-based record search (#328)
+- **base**: Add view visible fields `+get` / `+set` shortcuts (#326)
+- **base**: Add record field filters (#327)
+- **base**: Optimize workflow skills (#345)
+- **calendar**: Add room find workflow (#403)
+- **mail**: Add `--page-token` and `--page-size` to mail `+triage` (#301)
+- **whiteboard**: Add `+query` shortcut and enhance `+update` with Mermaid/PlantUML support (#382)
+
+### Bug Fixes
+
+- Improve error hints for sandbox and initialization issues (#384)
+- Fix markdown line breaks support (#338)
+- Return raw base field and view responses (#378)
+- **base**: Return raw table list response and clarify sort help (#393)
+- **calendar**: Add default video meeting to `+create` (#383)
+- **mail**: Replace `os.Exit` with graceful shutdown in mail watch (#350)
+
+### Documentation
+
+- **base**: Document Base attachment download via docs `+media-download` (#404)
+- Reorganize lark-base skill guidance (#374)
+
 ## [v1.0.7] - 2026-04-09
 
 ### Features
@@ -256,6 +303,8 @@ Bundled AI agent skills for intelligent assistance:
 - Bilingual documentation (English & Chinese).
 - CI/CD pipelines: linting, testing, coverage reporting, and automated releases.
 
+[v1.0.9]: https://github.com/larksuite/cli/releases/tag/v1.0.9
+[v1.0.8]: https://github.com/larksuite/cli/releases/tag/v1.0.8
 [v1.0.7]: https://github.com/larksuite/cli/releases/tag/v1.0.7
 [v1.0.6]: https://github.com/larksuite/cli/releases/tag/v1.0.6
 [v1.0.5]: https://github.com/larksuite/cli/releases/tag/v1.0.5

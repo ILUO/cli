@@ -379,7 +379,18 @@ func baseV3Path(parts ...string) string {
 func baseV3Raw(runtime *common.RuntimeContext, method, path string, params map[string]interface{}, data interface{}) (map[string]interface{}, error) {
 	queryParams := make(larkcore.QueryParams)
 	for k, v := range params {
-		queryParams.Set(k, fmt.Sprintf("%v", v))
+		switch val := v.(type) {
+		case []string:
+			for _, item := range val {
+				queryParams.Add(k, item)
+			}
+		case []interface{}:
+			for _, item := range val {
+				queryParams.Add(k, fmt.Sprintf("%v", item))
+			}
+		default:
+			queryParams.Set(k, fmt.Sprintf("%v", v))
+		}
 	}
 	req := &larkcore.ApiReq{
 		HttpMethod:  strings.ToUpper(method),
@@ -660,45 +671,6 @@ func viewName(view map[string]interface{}) string {
 	}
 	v, _ := view["view_name"].(string)
 	return v
-}
-
-func viewType(view map[string]interface{}) string {
-	if v, _ := view["type"].(string); v != "" {
-		return v
-	}
-	v, _ := view["view_type"].(string)
-	return v
-}
-
-func simplifyFields(fields []map[string]interface{}) []interface{} {
-	items := make([]interface{}, 0, len(fields))
-	for _, field := range fields {
-		entry := map[string]interface{}{
-			"field_id":   fieldID(field),
-			"field_name": fieldName(field),
-			"type":       fieldTypeName(field),
-		}
-		if style, ok := field["style"].(map[string]interface{}); ok && len(style) > 0 {
-			entry["style"] = style
-		}
-		if multiple, ok := field["multiple"].(bool); ok {
-			entry["multiple"] = multiple
-		}
-		items = append(items, entry)
-	}
-	return items
-}
-
-func simplifyViews(views []map[string]interface{}) []interface{} {
-	items := make([]interface{}, 0, len(views))
-	for _, view := range views {
-		items = append(items, map[string]interface{}{
-			"view_id":   viewID(view),
-			"view_name": viewName(view),
-			"view_type": viewType(view),
-		})
-	}
-	return items
 }
 
 func canonicalValue(v interface{}) string {
@@ -984,6 +956,8 @@ func sleepBetweenBatches(index int, total int) {
 
 // ── Dashboard Block data_config normalization & validation ───────────
 
+// normalizeDataConfig normalizes data_config fields for dashboard blocks.
+// It converts series[].rollup to uppercase and group_by[].sort fields to lowercase.
 func normalizeDataConfig(cfg map[string]interface{}) map[string]interface{} {
 	if cfg == nil {
 		return nil
@@ -1025,8 +999,21 @@ func normalizeDataConfig(cfg map[string]interface{}) map[string]interface{} {
 	return out
 }
 
+// validateBlockDataConfig validates data_config based on block type.
+// For text type, it checks for the presence of text field.
+// For chart types, it validates table_name, series/count_all, group_by, and filter fields.
 func validateBlockDataConfig(blockType string, cfg map[string]interface{}) []string {
 	var errs []string
+
+	// text 类型特殊校验：只需要有 text 字段即可
+	if strings.ToLower(blockType) == "text" {
+		if txt, _ := cfg["text"].(string); strings.TrimSpace(txt) == "" {
+			errs = append(errs, "text 类型组件缺少必填字段 text")
+		}
+		return errs
+	}
+
+	// 图表类型通用校验
 	// table_name 必填
 	if tn, _ := cfg["table_name"].(string); strings.TrimSpace(tn) == "" {
 		errs = append(errs, "缺少必填字段 table_name")
