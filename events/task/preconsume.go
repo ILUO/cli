@@ -19,7 +19,13 @@ func taskSubscriptionPreConsume(ctx context.Context, rt event.APIClient, _ map[s
 	}
 
 	if _, err := rt.CallAPI(ctx, "POST", taskSubscriptionPath, nil); err != nil {
-		return nil, err
+		if _, ok := errs.ProblemOf(err); ok {
+			return nil, err
+		}
+		return nil, errs.NewNetworkError(
+			errs.SubtypeNetworkTransport,
+			"failed to subscribe task event",
+		).WithCause(err)
 	}
 
 	return nil, nil

@@ -67,6 +67,9 @@ func TestTaskSubscriptionPreConsumeRequiresRuntime(t *testing.T) {
 	if p.Category != errs.CategoryInternal {
 		t.Errorf("category = %s, want %s", p.Category, errs.CategoryInternal)
 	}
+	if p.Subtype != errs.SubtypeUnknown {
+		t.Errorf("subtype = %s, want %s", p.Subtype, errs.SubtypeUnknown)
+	}
 }
 
 func TestTaskSubscriptionPreConsumePassesThroughAPIError(t *testing.T) {
@@ -76,5 +79,28 @@ func TestTaskSubscriptionPreConsumePassesThroughAPIError(t *testing.T) {
 	_, err := taskSubscriptionPreConsume(context.Background(), rt, nil)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+}
+
+func TestTaskSubscriptionPreConsumeWrapsUntypedAPIError(t *testing.T) {
+	cause := errors.New("connection reset")
+	rt := &stubAPIClient{err: cause}
+
+	_, err := taskSubscriptionPreConsume(context.Background(), rt, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("err = %v, want cause %v", err, cause)
+	}
+	p, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed error, got %T: %v", err, err)
+	}
+	if p.Category != errs.CategoryNetwork {
+		t.Errorf("category = %s, want %s", p.Category, errs.CategoryNetwork)
+	}
+	if p.Subtype != errs.SubtypeNetworkTransport {
+		t.Errorf("subtype = %s, want %s", p.Subtype, errs.SubtypeNetworkTransport)
 	}
 }

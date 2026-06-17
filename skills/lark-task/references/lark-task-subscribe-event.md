@@ -102,8 +102,8 @@ This shortcut has no additional parameters.
 ## Workflow
 
 1. Confirm whether the user wants to subscribe with `user` identity or `bot` identity.
-2. If the user wants to listen now, execute `lark-cli event consume task.task.update_user_access_v2 --as <identity>`.
-3. If the user only wants to register the subscription, execute `lark-cli task +subscribe-event --as <identity>`.
+2. To start listening now, execute `lark-cli event consume task.task.update_user_access_v2 --as <identity>`.
+3. To only register the subscription, execute `lark-cli task +subscribe-event --as <identity>`.
 4. Report whether the subscription or consumer startup succeeded, and clarify which identity it applies to.
 
 > [!CAUTION]
