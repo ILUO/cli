@@ -4,10 +4,20 @@
 >
 > **⚠️ Note:** This API supports both `user` and `bot` identities. Use `user` to subscribe the current user's accessible tasks; use `bot` to subscribe tasks the **application is responsible for**.
 
-Subscribe task update events with the current identity.
+Manually create the task update event subscription for the current identity.
 
-This shortcut is different from `event +subscribe`:
+For listening to task events, prefer the new unified event consumer:
+
+```bash
+lark-cli event consume task.task.update_user_access_v2 --as user
+lark-cli event consume task.task.update_user_access_v2 --as bot
+```
+
+`event consume task.task.update_user_access_v2` calls this same subscription API during startup, then streams events as NDJSON through the shared event bus.
+
+This shortcut is still useful when you only want to register the subscription and do not want to start a long-running consumer. It is different from `event consume`:
 - `task +subscribe-event` registers task-event access for the **current identity**
+- `event consume task.task.update_user_access_v2` registers task-event access, starts the local bus daemon if needed, and streams matching events to stdout
 - with `--as user`, it subscribes the **current user** to task events for tasks they created, are responsible for, or follow
 - with `--as bot`, it subscribes using the **application identity** for tasks the application is responsible for
 
@@ -31,45 +41,58 @@ task_start_due_update
 task_summary_update
 ```
 
-Event payload shape (example):
+`event consume` output uses the standard Lark V2 envelope. Event payload shape (example):
 
 ```json
 {
-  "event_id": "evt_xxx",
-  "event_types": ["task_summary_update"],
-  "task_guid": "task_guid_xxx",
-  "timestamp": "1775793266152",
-  "type": "task.task.update_user_access_v2"
+  "schema": "2.0",
+  "header": {
+    "event_id": "evt_xxx",
+    "event_type": "task.task.update_user_access_v2",
+    "create_time": "1775793266152"
+  },
+  "event": {
+    "event_types": ["task_summary_update"],
+    "task_guid": "task_guid_xxx"
+  }
 }
 ```
 
-- `type`: event type, should be `task.task.update_user_access_v2`
-- `event_id`: unique event id (useful for dedup)
-- `event_types`: list of commit types (see the deduped list above)
-- `task_guid`: the task GUID that changed
-- `timestamp`: event timestamp (ms)
+- `.header.event_type`: event type, should be `task.task.update_user_access_v2`
+- `.header.event_id`: unique event id (useful for dedup)
+- `.header.create_time`: event timestamp (ms)
+- `.event.event_types`: list of commit types (see the deduped list above)
+- `.event.task_guid`: the task GUID that changed
 
 In practice, this means:
 - with `--as user`, the subscribed user can receive updates for tasks visible to them through authorship, assignment, or following
 - with `--as bot`, the subscription covers tasks the application is responsible for
 
-To actually receive the subscribed events, use the standard event WebSocket receiver:
+To actually receive events, use the standard event consumer:
 
 ```bash
-lark-cli event +subscribe --event-types task.task.update_user_access_v2 --compact --quiet
+lark-cli event consume task.task.update_user_access_v2 --as user
 ```
 
-The full flow is:
-1. Register the subscription with `lark-cli task +subscribe-event [--as user|bot]`
-2. Receive those events with `lark-cli event +subscribe --event-types task.task.update_user_access_v2 ...`
+Useful projections:
+
+```bash
+lark-cli event consume task.task.update_user_access_v2 --as user \
+  --jq '{event_id: .header.event_id, task_guid: .event.task_guid, event_types: .event.event_types, timestamp: .header.create_time}'
+```
 
 ## Recommended Commands
 
 ```bash
-lark-cli task +subscribe-event
-```
-# Subscribe with app identity
+# Preferred: subscribe and listen in one command
+lark-cli event consume task.task.update_user_access_v2 --as user
+
+# Manual subscription only
+lark-cli task +subscribe-event --as user
+
+# Manual subscription with app identity
 lark-cli task +subscribe-event --as bot
+```
 
 
 ## Parameters
@@ -79,8 +102,9 @@ This shortcut has no additional parameters.
 ## Workflow
 
 1. Confirm whether the user wants to subscribe with `user` identity or `bot` identity.
-2. Execute `lark-cli task +subscribe-event`
-3. Report whether the subscription succeeded, and clarify which identity the subscription applies to.
+2. If the user wants to listen now, execute `lark-cli event consume task.task.update_user_access_v2 --as <identity>`.
+3. If the user only wants to register the subscription, execute `lark-cli task +subscribe-event --as <identity>`.
+4. Report whether the subscription or consumer startup succeeded, and clarify which identity it applies to.
 
 > [!CAUTION]
 > This is a **Write Operation** -- You must confirm the user's intent before executing.
