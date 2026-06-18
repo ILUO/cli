@@ -77,8 +77,21 @@ func TestTaskSubscriptionPreConsumePassesThroughAPIError(t *testing.T) {
 	rt := &stubAPIClient{err: wantErr}
 
 	_, err := taskSubscriptionPreConsume(context.Background(), rt, nil)
+	if err != wantErr {
+		t.Fatalf("err identity changed: got %T %v, want original %T %v", err, err, wantErr, wantErr)
+	}
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	p, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed error, got %T: %v", err, err)
+	}
+	if p.Category != errs.CategoryValidation {
+		t.Errorf("category = %s, want %s", p.Category, errs.CategoryValidation)
+	}
+	if p.Subtype != errs.SubtypeFailedPrecondition {
+		t.Errorf("subtype = %s, want %s", p.Subtype, errs.SubtypeFailedPrecondition)
 	}
 }
 
