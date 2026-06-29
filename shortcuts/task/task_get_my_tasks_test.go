@@ -166,6 +166,62 @@ func TestGetMyTasks_IncludesCompletionStateInJSON(t *testing.T) {
 	}
 }
 
+func TestGetMyTasks_IncludesCompletionStateInPretty(t *testing.T) {
+	tsMs := int64(1775174400000)
+	tsStr := strconv.FormatInt(tsMs, 10)
+	expectedCompletedAt := time.UnixMilli(tsMs).Local().Format("2006-01-02 15:04")
+
+	f, stdout, _, reg := taskShortcutTestFactory(t)
+	warmTenantToken(t, f, reg)
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/open-apis/task/v2/tasks",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "success",
+			"data": map[string]interface{}{
+				"items": []interface{}{
+					map[string]interface{}{
+						"guid":         "task-open",
+						"summary":      "Open Task",
+						"completed_at": "0",
+						"url":          "https://example.com/task-open",
+					},
+					map[string]interface{}{
+						"guid":         "task-done",
+						"summary":      "Done Task",
+						"completed_at": tsStr,
+						"url":          "https://example.com/task-done",
+					},
+				},
+				"has_more":   false,
+				"page_token": "",
+			},
+		},
+	})
+
+	s := GetMyTasks
+	s.AuthTypes = []string{"bot", "user"}
+
+	err := runMountedTaskShortcut(t, s, []string{"+get-my-tasks", "--format", "pretty", "--as", "bot"}, f, stdout)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	out := stdout.String()
+	for _, expected := range []string{
+		"[1] Open Task\n    ID: task-open\n    URL: https://example.com/task-open\n    Completed: false\n",
+		"[2] Done Task\n    ID: task-done\n    URL: https://example.com/task-done\n    Completed: true\n    Completed At: " + expectedCompletedAt + "\n",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("output missing expected string (%s), got: %s", expected, out)
+		}
+	}
+	if count := strings.Count(out, "Completed At:"); count != 1 {
+		t.Fatalf("Completed At count = %d, want 1; output: %s", count, out)
+	}
+}
+
 // TestGetMyTasks_InvalidTimeFlags locks the three time-flag validation arms in
 // Execute (--created_at / --due-start / --due-end). The parse runs before any
 // API call, so a malformed value deterministically surfaces a typed
