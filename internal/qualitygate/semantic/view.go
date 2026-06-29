@@ -13,27 +13,29 @@ import (
 )
 
 type InputView struct {
-	SchemaVersion  int                    `json:"schema_version"`
-	ChangedSummary ChangedSummary         `json:"changed_summary"`
-	RuleSummary    []RuleSummaryItem      `json:"rule_summary,omitempty"`
-	Commands       []CommandInput         `json:"commands,omitempty"`
-	Skills         []SkillInput           `json:"skills,omitempty"`
-	SkillQuality   []SkillQualityInput    `json:"skill_quality,omitempty"`
-	Errors         []ErrorInput           `json:"errors,omitempty"`
-	Outputs        []OutputInput          `json:"outputs,omitempty"`
-	Examples       []ExampleInput         `json:"examples,omitempty"`
-	Diagnostics    []facts.DiagnosticFact `json:"diagnostics,omitempty"`
+	SchemaVersion        int                    `json:"schema_version"`
+	ChangedSummary       ChangedSummary         `json:"changed_summary"`
+	RuleSummary          []RuleSummaryItem      `json:"rule_summary,omitempty"`
+	Commands             []CommandInput         `json:"commands,omitempty"`
+	Skills               []SkillInput           `json:"skills,omitempty"`
+	SkillQuality         []SkillQualityInput    `json:"skill_quality,omitempty"`
+	Errors               []ErrorInput           `json:"errors,omitempty"`
+	Outputs              []OutputInput          `json:"outputs,omitempty"`
+	Examples             []ExampleInput         `json:"examples,omitempty"`
+	PublicContentLeakage []PublicContentInput   `json:"public_content_leakage,omitempty"`
+	Diagnostics          []facts.DiagnosticFact `json:"diagnostics,omitempty"`
 }
 
 type ChangedSummary struct {
-	Commands     int      `json:"commands,omitempty"`
-	Skills       int      `json:"skills,omitempty"`
-	SkillQuality int      `json:"skill_quality,omitempty"`
-	Errors       int      `json:"errors,omitempty"`
-	Outputs      int      `json:"outputs,omitempty"`
-	Examples     int      `json:"examples,omitempty"`
-	Domains      []string `json:"domains,omitempty"`
-	Sources      []string `json:"sources,omitempty"`
+	Commands      int      `json:"commands,omitempty"`
+	Skills        int      `json:"skills,omitempty"`
+	SkillQuality  int      `json:"skill_quality,omitempty"`
+	Errors        int      `json:"errors,omitempty"`
+	Outputs       int      `json:"outputs,omitempty"`
+	Examples      int      `json:"examples,omitempty"`
+	PublicContent int      `json:"public_content,omitempty"`
+	Domains       []string `json:"domains,omitempty"`
+	Sources       []string `json:"sources,omitempty"`
 }
 
 type RuleSummaryItem struct {
@@ -61,8 +63,6 @@ type SkillQualityInput struct {
 	facts.SkillQualityFact
 }
 
-func (i SkillQualityInput) ref() string { return i.FactRef }
-
 type ErrorInput struct {
 	FactRef string `json:"fact_ref"`
 	facts.ErrorFact
@@ -71,8 +71,14 @@ type ErrorInput struct {
 func (i ErrorInput) ref() string { return i.FactRef }
 
 type OutputInput struct {
-	FactRef string `json:"fact_ref"`
-	facts.OutputFact
+	FactRef          string `json:"fact_ref"`
+	Command          string `json:"command"`
+	Domain           string `json:"domain,omitempty"`
+	Changed          bool   `json:"changed,omitempty"`
+	Source           string `json:"source,omitempty"`
+	IsList           bool   `json:"is_list"`
+	HasDefaultLimit  bool   `json:"has_default_limit"`
+	HasDecisionField bool   `json:"has_decision_field"`
 }
 
 func (i OutputInput) ref() string { return i.FactRef }
@@ -82,11 +88,25 @@ type ExampleInput struct {
 	facts.CommandExample
 }
 
-func (i ExampleInput) ref() string { return i.FactRef }
+type PublicContentInput struct {
+	FactRef string `json:"fact_ref"`
+	facts.PublicContentFact
+}
+
+func (v InputView) HasReviewableFacts() bool {
+	return len(v.Commands) > 0 ||
+		len(v.Skills) > 0 ||
+		len(v.SkillQuality) > 0 ||
+		len(v.Errors) > 0 ||
+		len(v.Outputs) > 0 ||
+		len(v.Examples) > 0 ||
+		len(v.PublicContentLeakage) > 0 ||
+		len(v.Diagnostics) > 0
+}
 
 func BuildInputView(f facts.Facts) InputView {
 	selected := newInputSelection(f)
-	selected.addChangedFacts()
+	selected.addChangedReviewCandidates()
 
 	var viewDiagnostics []facts.DiagnosticFact
 	for _, diag := range f.Diagnostics {
@@ -102,76 +122,115 @@ func BuildInputView(f facts.Facts) InputView {
 	}
 
 	return InputView{
-		SchemaVersion:  f.SchemaVersion,
-		ChangedSummary: changedSummary(f),
-		RuleSummary:    ruleSummary(f.Diagnostics),
-		Commands:       selected.commandInputs(),
-		Skills:         selected.skillInputs(),
-		SkillQuality:   selected.skillQualityInputs(),
-		Errors:         selected.errorInputs(),
-		Outputs:        selected.outputInputs(),
-		Examples:       selected.exampleInputs(),
-		Diagnostics:    viewDiagnostics,
+		SchemaVersion:        f.SchemaVersion,
+		ChangedSummary:       changedSummary(f),
+		RuleSummary:          ruleSummary(f.Diagnostics),
+		Commands:             selected.commandInputs(),
+		Skills:               selected.skillInputs(),
+		SkillQuality:         selected.skillQualityInputs(),
+		Errors:               selected.errorInputs(),
+		Outputs:              selected.outputInputs(),
+		Examples:             selected.exampleInputs(),
+		PublicContentLeakage: selected.publicContentInputs(),
+		Diagnostics:          viewDiagnostics,
 	}
 }
 
-func (s *inputSelection) addChangedFacts() {
+func (s *inputSelection) addChangedReviewCandidates() {
 	for i, cmd := range s.f.Commands {
-		if cmd.Changed {
+		if cmd.Changed && commandReviewCandidate(cmd) {
 			s.commands[i] = true
 		}
 	}
 	for i, skill := range s.f.Skills {
-		if skill.Changed {
+		if skill.Changed && skillReviewCandidate(skill) {
 			s.skills[i] = true
 		}
 	}
-	for i, skill := range s.f.SkillQuality {
-		if skill.Changed {
-			s.skillQuality[i] = true
-		}
-	}
 	for i, errFact := range s.f.Errors {
-		if errFact.Changed {
+		if errFact.Changed && errorReviewCandidate(errFact) {
 			s.errors[i] = true
 		}
 	}
 	for i, output := range s.f.Outputs {
-		if output.Changed {
+		if output.Changed && outputReviewCandidate(output) {
 			s.outputs[i] = true
 		}
 	}
-	for i, example := range s.f.Examples {
-		if example.Changed {
-			s.examples[i] = true
+	for i, item := range s.f.PublicContent {
+		if publicContentReviewCandidate(item) {
+			s.publicContent[i] = true
 		}
 	}
 }
 
+func commandReviewCandidate(cmd facts.CommandFact) bool {
+	return cmd.NameConflictsExisting || cmd.FlagAliasConflict
+}
+
+func skillReviewCandidate(skill facts.SkillFact) bool {
+	return skill.ReferencesInvalidCommand
+}
+
+func errorReviewCandidate(errFact facts.ErrorFact) bool {
+	return errFact.Boundary && errFact.RequiredHint && errFact.HintActionCount == 0
+}
+
+func outputReviewCandidate(_ facts.OutputFact) bool {
+	// default_output is observe-first in the current rollout; reject diagnostics add exact output context.
+	return false
+}
+
+func publicContentReviewCandidate(item facts.PublicContentFact) bool {
+	return item.Rule == "public_content_semantic_candidate"
+}
+
 type inputSelection struct {
-	f            facts.Facts
-	commands     []bool
-	skills       []bool
-	skillQuality []bool
-	errors       []bool
-	outputs      []bool
-	examples     []bool
+	f             facts.Facts
+	commands      []bool
+	skills        []bool
+	skillQuality  []bool
+	errors        []bool
+	outputs       []bool
+	examples      []bool
+	publicContent []bool
 }
 
 func newInputSelection(f facts.Facts) *inputSelection {
 	return &inputSelection{
-		f:            f,
-		commands:     make([]bool, len(f.Commands)),
-		skills:       make([]bool, len(f.Skills)),
-		skillQuality: make([]bool, len(f.SkillQuality)),
-		errors:       make([]bool, len(f.Errors)),
-		outputs:      make([]bool, len(f.Outputs)),
-		examples:     make([]bool, len(f.Examples)),
+		f:             f,
+		commands:      make([]bool, len(f.Commands)),
+		skills:        make([]bool, len(f.Skills)),
+		skillQuality:  make([]bool, len(f.SkillQuality)),
+		errors:        make([]bool, len(f.Errors)),
+		outputs:       make([]bool, len(f.Outputs)),
+		examples:      make([]bool, len(f.Examples)),
+		publicContent: make([]bool, len(f.PublicContent)),
 	}
 }
 
 func (s *inputSelection) diagnosticContext(diag facts.DiagnosticFact) *inputSelection {
 	out := newInputSelection(s.f)
+	switch {
+	case diag.Rule == "command_naming" || diag.Rule == "flag_naming":
+		s.addDiagnosticCommands(out, diag)
+	case strings.HasPrefix(diag.Rule, "default_output"):
+		s.addDiagnosticOutputs(out, diag)
+	case strings.HasPrefix(diag.Rule, "skill_"):
+		s.addDiagnosticSkills(out, diag)
+		s.addDiagnosticSkillQuality(out, diag)
+		s.addDiagnosticExamples(out, diag)
+	case strings.HasPrefix(diag.Rule, "example_dry_run"):
+		s.addDiagnosticExamples(out, diag)
+	case diag.Rule == "no_bare_helper_error":
+		s.addDiagnosticErrors(out, diag)
+	case strings.HasPrefix(diag.Rule, "public_content_"):
+		s.addDiagnosticPublicContent(out, diag)
+	}
+	return out
+}
+
+func (s *inputSelection) addDiagnosticCommands(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, cmd := range s.f.Commands {
 		if diagnosticCommandMatches(diag, cmd.Path, cmd.CanonicalPath) ||
 			diagnosticMentions(diag, cmd.Path) ||
@@ -179,6 +238,9 @@ func (s *inputSelection) diagnosticContext(diag facts.DiagnosticFact) *inputSele
 			out.commands[i] = true
 		}
 	}
+}
+
+func (s *inputSelection) addDiagnosticSkills(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, skill := range s.f.Skills {
 		if diagnosticLocationMatches(diag.File, diag.Line, skill.SourceFile, skill.Line) ||
 			diagnosticCommandMatches(diag, skill.CommandPath) ||
@@ -186,11 +248,17 @@ func (s *inputSelection) diagnosticContext(diag facts.DiagnosticFact) *inputSele
 			out.skills[i] = true
 		}
 	}
+}
+
+func (s *inputSelection) addDiagnosticSkillQuality(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, skill := range s.f.SkillQuality {
 		if samePath(diag.File, skill.SourceFile) {
 			out.skillQuality[i] = true
 		}
 	}
+}
+
+func (s *inputSelection) addDiagnosticErrors(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, errFact := range s.f.Errors {
 		if diagnosticLocationMatches(diag.File, diag.Line, errFact.File, errFact.Line) ||
 			diagnosticCommandMatches(diag, errFact.CommandPath, errFact.Command) ||
@@ -199,12 +267,18 @@ func (s *inputSelection) diagnosticContext(diag facts.DiagnosticFact) *inputSele
 			out.errors[i] = true
 		}
 	}
+}
+
+func (s *inputSelection) addDiagnosticOutputs(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, output := range s.f.Outputs {
 		if diagnosticCommandMatches(diag, output.Command) ||
 			diagnosticMentions(diag, output.Command) {
 			out.outputs[i] = true
 		}
 	}
+}
+
+func (s *inputSelection) addDiagnosticExamples(out *inputSelection, diag facts.DiagnosticFact) {
 	for i, example := range s.f.Examples {
 		if diagnosticLocationMatches(diag.File, diag.Line, example.SourceFile, example.Line) ||
 			diagnosticCommandMatches(diag, example.CommandPath) ||
@@ -212,11 +286,19 @@ func (s *inputSelection) diagnosticContext(diag facts.DiagnosticFact) *inputSele
 			out.examples[i] = true
 		}
 	}
-	return out
+}
+
+func (s *inputSelection) addDiagnosticPublicContent(out *inputSelection, diag facts.DiagnosticFact) {
+	for i, item := range s.f.PublicContent {
+		if diagnosticLocationMatches(diag.File, diag.Line, item.File, item.Line) ||
+			diag.Rule == item.Rule {
+			out.publicContent[i] = true
+		}
+	}
 }
 
 func includeDiagnosticInView(diag facts.DiagnosticFact, selected, context *inputSelection) bool {
-	if diag.Action != report.ActionWarning {
+	if diag.Action == report.ActionReject {
 		return true
 	}
 	return selected.intersects(context)
@@ -229,6 +311,7 @@ func (s *inputSelection) merge(other *inputSelection) {
 	mergeSelections(s.errors, other.errors)
 	mergeSelections(s.outputs, other.outputs)
 	mergeSelections(s.examples, other.examples)
+	mergeSelections(s.publicContent, other.publicContent)
 }
 
 func (s *inputSelection) intersects(other *inputSelection) bool {
@@ -237,7 +320,8 @@ func (s *inputSelection) intersects(other *inputSelection) bool {
 		selectionsIntersect(s.skillQuality, other.skillQuality) ||
 		selectionsIntersect(s.errors, other.errors) ||
 		selectionsIntersect(s.outputs, other.outputs) ||
-		selectionsIntersect(s.examples, other.examples)
+		selectionsIntersect(s.examples, other.examples) ||
+		selectionsIntersect(s.publicContent, other.publicContent)
 }
 
 func (s *inputSelection) commandInputs() []CommandInput {
@@ -284,7 +368,17 @@ func (s *inputSelection) outputInputs() []OutputInput {
 	out := make([]OutputInput, 0, countSelected(s.outputs))
 	for i, ok := range s.outputs {
 		if ok {
-			out = append(out, OutputInput{FactRef: factRef("outputs", i), OutputFact: s.f.Outputs[i]})
+			output := s.f.Outputs[i]
+			out = append(out, OutputInput{
+				FactRef:          factRef("outputs", i),
+				Command:          output.Command,
+				Domain:           output.Domain,
+				Changed:          output.Changed,
+				Source:           output.Source,
+				IsList:           output.IsList,
+				HasDefaultLimit:  output.HasDefaultLimit,
+				HasDecisionField: output.HasDecisionField,
+			})
 		}
 	}
 	return out
@@ -295,6 +389,16 @@ func (s *inputSelection) exampleInputs() []ExampleInput {
 	for i, ok := range s.examples {
 		if ok {
 			out = append(out, ExampleInput{FactRef: factRef("examples", i), CommandExample: s.f.Examples[i]})
+		}
+	}
+	return out
+}
+
+func (s *inputSelection) publicContentInputs() []PublicContentInput {
+	out := make([]PublicContentInput, 0, countSelected(s.publicContent))
+	for i, ok := range s.publicContent {
+		if ok {
+			out = append(out, PublicContentInput{FactRef: factRef("public_content", i), PublicContentFact: s.f.PublicContent[i]})
 		}
 	}
 	return out
@@ -351,6 +455,10 @@ func changedSummary(f facts.Facts) ChangedSummary {
 		addNonEmpty(domains, example.Domain)
 		addNonEmpty(sources, example.Source)
 	}
+	for _, item := range f.PublicContent {
+		out.PublicContent++
+		addNonEmpty(sources, item.Source)
+	}
 	out.Domains = sortedViewSetKeys(domains)
 	out.Sources = sortedViewSetKeys(sources)
 	return out
@@ -383,7 +491,8 @@ func semanticDiagnosticRule(rule string) bool {
 		strings.HasPrefix(rule, "default_output") ||
 		strings.HasPrefix(rule, "skill_") ||
 		strings.HasPrefix(rule, "example_dry_run") ||
-		rule == "no_bare_helper_error"
+		rule == "no_bare_helper_error" ||
+		strings.HasPrefix(rule, "public_content_")
 }
 
 func diagnosticCommandMatches(diag facts.DiagnosticFact, values ...string) bool {

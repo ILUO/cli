@@ -23,7 +23,10 @@ func TestBuildPromptContainsSemanticReviewContract(t *testing.T) {
 		"A facts.outputs item with is_list true, has_default_limit false, and has_decision_field true must still produce a default_output finding.",
 		"Report a naming finding for any facts.commands item where name_conflicts_existing is true or flag_alias_conflict is true.",
 		"Report a skill_quality finding for any facts.skills item where references_invalid_command is true.",
-		"Only facts.commands, facts.skills, facts.errors, and facts.outputs fact_ref values may be blocker evidence.",
+		"Review public content leakage findings and semantic candidates without private dictionaries.",
+		"Do not reveal internal rule lists when explaining public content leakage.",
+		"For public_content_leakage findings, preserve the deterministic finding source and excerpt.",
+		"Only facts.commands, facts.skills, facts.errors, facts.outputs, and facts.public_content fact_ref values may be blocker evidence.",
 		"Evidence entries must be exact fact_ref strings such as \"facts.commands[0]\" with no explanations, labels, or suffix text.",
 		"facts.examples and facts.skill_quality entries are context only.",
 		"Report each distinct issue as a separate finding.",
@@ -43,7 +46,7 @@ func TestBuildPromptContainsSemanticReviewContract(t *testing.T) {
 	}
 }
 
-func TestBuildInputViewSelectsChangedFactsWithStableRefs(t *testing.T) {
+func TestBuildInputViewSelectsChangedReviewCandidatesWithStableRefs(t *testing.T) {
 	view := BuildInputView(facts.Facts{
 		SchemaVersion: 1,
 		Commands: []facts.CommandFact{
@@ -78,17 +81,17 @@ func TestBuildInputViewSelectsChangedFactsWithStableRefs(t *testing.T) {
 	if got := singleRef(t, view.Skills); got != "facts.skills[1]" {
 		t.Fatalf("skill ref = %q, want facts.skills[1]", got)
 	}
-	if got := singleRef(t, view.SkillQuality); got != "facts.skill_quality[1]" {
-		t.Fatalf("skill quality ref = %q, want facts.skill_quality[1]", got)
+	if len(view.SkillQuality) != 0 {
+		t.Fatalf("skill quality len = %d, want 0 without diagnostics", len(view.SkillQuality))
 	}
 	if got := singleRef(t, view.Errors); got != "facts.errors[1]" {
 		t.Fatalf("error ref = %q, want facts.errors[1]", got)
 	}
-	if got := singleRef(t, view.Outputs); got != "facts.outputs[1]" {
-		t.Fatalf("output ref = %q, want facts.outputs[1]", got)
+	if len(view.Outputs) != 0 {
+		t.Fatalf("outputs len = %d, want 0 without reject diagnostics", len(view.Outputs))
 	}
-	if got := singleRef(t, view.Examples); got != "facts.examples[1]" {
-		t.Fatalf("example ref = %q, want facts.examples[1]", got)
+	if len(view.Examples) != 0 {
+		t.Fatalf("examples len = %d, want 0 without diagnostics", len(view.Examples))
 	}
 	if view.ChangedSummary.Commands != 1 ||
 		view.ChangedSummary.Skills != 1 ||
