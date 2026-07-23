@@ -5,6 +5,7 @@ package task
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 
 	"github.com/larksuite/cli/errs"
@@ -79,6 +80,18 @@ func TestParseTaskGUID(t *testing.T) {
 					t.Fatalf("param = %q, want %q", validationErr.Param, "--task-id")
 				}
 			})
+		}
+	})
+
+	t.Run("preserves applink parse cause", func(t *testing.T) {
+		_, err := parseTaskGUID("https://%")
+		if err == nil {
+			t.Fatal("parseTaskGUID() error = nil, want URL parse error")
+		}
+
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			t.Fatalf("error chain = %T %v, want *url.Error cause", err, err)
 		}
 	})
 }

@@ -105,7 +105,7 @@ var taskDisplayNumberPattern = regexp.MustCompile(`^t[0-9]+$`)
 
 func parseTaskGUID(input string) (string, error) {
 	input = strings.TrimSpace(input)
-	invalid := func(format string, args ...interface{}) error {
+	invalid := func(format string, args ...interface{}) *errs.ValidationError {
 		return errs.NewValidationError(errs.SubtypeInvalidArgument, format, args...).
 			WithParam("--task-id").
 			WithHint("provide the Task OpenAPI GUID or a task applink containing guid=")
@@ -119,7 +119,7 @@ func parseTaskGUID(input string) (string, error) {
 	if strings.HasPrefix(lowerInput, "http://") || strings.HasPrefix(lowerInput, "https://") {
 		u, err := url.Parse(input)
 		if err != nil {
-			return "", invalid("invalid task applink: %v", err)
+			return "", invalid("invalid task applink: %v", err).WithCause(err)
 		}
 		guid := strings.TrimSpace(u.Query().Get("guid"))
 		if guid == "" {

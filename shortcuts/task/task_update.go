@@ -48,11 +48,13 @@ var UpdateTask = common.Shortcut{
 		if err != nil {
 			return common.NewDryRunAPI().Set("error", err.Error())
 		}
-		taskID := url.PathEscape(taskIDs[0])
-		return common.NewDryRunAPI().
-			PATCH("/open-apis/task/v2/tasks/" + taskID).
-			Params(map[string]interface{}{"user_id_type": "open_id"}).
-			Body(body)
+		preview := common.NewDryRunAPI()
+		for _, taskID := range taskIDs {
+			preview.PATCH("/open-apis/task/v2/tasks/" + url.PathEscape(taskID)).
+				Params(map[string]interface{}{"user_id_type": "open_id"}).
+				Body(body)
+		}
+		return preview
 	},
 
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {

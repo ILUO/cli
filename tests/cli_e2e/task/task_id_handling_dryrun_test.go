@@ -44,6 +44,24 @@ func TestTaskIDHandlingDryRun(t *testing.T) {
 		require.Equal(t, clie2e.DryRunGet(guidResult.Stdout, "api.0.body").Raw, clie2e.DryRunGet(applinkResult.Stdout, "api.0.body").Raw)
 	})
 
+	t.Run("multi-ID update previews every mutation", func(t *testing.T) {
+		result := run(t, []string{
+			"task", "+update",
+			"--task-id", "task-guid-1,https://applink.larksuite.com/client/todo/task?guid=task-guid-2",
+			"--summary", "updated",
+			"--dry-run",
+		})
+		result.AssertExitCode(t, 0)
+
+		require.Equal(t, int64(2), clie2e.DryRunGet(result.Stdout, "api.#").Int())
+		require.Equal(t, "PATCH", clie2e.DryRunGet(result.Stdout, "api.0.method").String())
+		require.Equal(t, "/open-apis/task/v2/tasks/task-guid-1", clie2e.DryRunGet(result.Stdout, "api.0.url").String())
+		require.Equal(t, "PATCH", clie2e.DryRunGet(result.Stdout, "api.1.method").String())
+		require.Equal(t, "/open-apis/task/v2/tasks/task-guid-2", clie2e.DryRunGet(result.Stdout, "api.1.url").String())
+		require.Equal(t, clie2e.DryRunGet(result.Stdout, "api.0.params").Raw, clie2e.DryRunGet(result.Stdout, "api.1.params").Raw)
+		require.Equal(t, clie2e.DryRunGet(result.Stdout, "api.0.body").Raw, clie2e.DryRunGet(result.Stdout, "api.1.body").Raw)
+	})
+
 	t.Run("GUID and applink produce equivalent completion requests", func(t *testing.T) {
 		guidResult := run(t, []string{
 			"task", "+complete", "--task-id", "task-guid-456", "--dry-run",

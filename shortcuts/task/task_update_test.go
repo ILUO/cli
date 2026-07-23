@@ -4,6 +4,7 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/httpmock"
+	"github.com/larksuite/cli/shortcuts/common"
+	"github.com/spf13/cobra"
 )
 
 func TestParseTaskGUIDs(t *testing.T) {
@@ -26,6 +29,55 @@ func TestParseTaskGUIDs(t *testing.T) {
 	_, err = parseTaskGUIDs("task-guid-1,t12345")
 	if err == nil {
 		t.Fatal("parseTaskGUIDs() error = nil, want invalid display-number error")
+	}
+}
+
+func TestTaskUpdateDryRunPreviewsEveryTaskID(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("task-id", "task-guid-1,https://applink.larksuite.com/client/todo/detail?guid=task-guid-2", "")
+	cmd.Flags().String("summary", "updated", "")
+	cmd.Flags().String("description", "", "")
+	cmd.Flags().String("due", "", "")
+	cmd.Flags().String("data", "", "")
+
+	preview := UpdateTask.DryRun(context.Background(), &common.RuntimeContext{Cmd: cmd})
+	payload, err := json.Marshal(preview)
+	if err != nil {
+		t.Fatalf("marshal dry-run preview: %v", err)
+	}
+
+	var got struct {
+		API []struct {
+			Method string                 `json:"method"`
+			URL    string                 `json:"url"`
+			Params map[string]interface{} `json:"params"`
+			Body   map[string]interface{} `json:"body"`
+		} `json:"api"`
+	}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("decode dry-run preview: %v", err)
+	}
+	if len(got.API) != 2 {
+		t.Fatalf("dry-run API calls = %d, want 2; payload: %s", len(got.API), payload)
+	}
+
+	wantURLs := []string{
+		"/open-apis/task/v2/tasks/task-guid-1",
+		"/open-apis/task/v2/tasks/task-guid-2",
+	}
+	for i, call := range got.API {
+		if call.Method != "PATCH" {
+			t.Errorf("api[%d].method = %q, want PATCH", i, call.Method)
+		}
+		if call.URL != wantURLs[i] {
+			t.Errorf("api[%d].url = %q, want %q", i, call.URL, wantURLs[i])
+		}
+		if !reflect.DeepEqual(call.Params, map[string]interface{}{"user_id_type": "open_id"}) {
+			t.Errorf("api[%d].params = %#v", i, call.Params)
+		}
+		if !reflect.DeepEqual(call.Body, got.API[0].Body) {
+			t.Errorf("api[%d].body = %#v, want same body as first call %#v", i, call.Body, got.API[0].Body)
+		}
 	}
 }
 
