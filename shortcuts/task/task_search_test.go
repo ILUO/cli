@@ -107,9 +107,10 @@ func TestBuildTaskSearchBody(t *testing.T) {
 
 func TestSearchTask_DryRun(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(*cobra.Command)
-		wantParts []string
+		name          string
+		setup         func(*cobra.Command)
+		wantPageToken string
+		wantParts     []string
 	}{
 		{
 			name: "valid dry run",
@@ -117,7 +118,8 @@ func TestSearchTask_DryRun(t *testing.T) {
 				_ = cmd.Flags().Set("query", "demo")
 				_ = cmd.Flags().Set("page-token", "pt_demo")
 			},
-			wantParts: []string{"POST /open-apis/task/v2/tasks/search?page_token=pt_demo", `"query":"demo"`},
+			wantPageToken: "pt_demo",
+			wantParts:     []string{`"query":"demo"`},
 		},
 		{
 			name: "dry run error on invalid due",
@@ -146,7 +148,11 @@ func TestSearchTask_DryRun(t *testing.T) {
 					t.Fatalf("Validate() error = %v", err)
 				}
 			}
-			out := SearchTask.DryRun(nil, runtime).Format()
+			preview := SearchTask.DryRun(nil, runtime)
+			if tt.wantPageToken != "" {
+				assertSearchDryRunPageToken(t, preview, tt.wantPageToken)
+			}
+			out := preview.Format()
 			for _, want := range tt.wantParts {
 				if !strings.Contains(out, want) {
 					t.Fatalf("dry run output missing %q: %s", want, out)

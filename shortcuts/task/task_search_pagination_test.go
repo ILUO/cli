@@ -66,6 +66,34 @@ func TestSearchPaginationUsesQueryToken(t *testing.T) {
 	}
 }
 
+func assertSearchDryRunPageToken(t *testing.T, preview *common.DryRunAPI, want string) {
+	t.Helper()
+
+	data, err := preview.MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshal search dry-run preview: %v", err)
+	}
+	var envelope struct {
+		API []struct {
+			Params map[string]interface{} `json:"params"`
+			Body   map[string]interface{} `json:"body"`
+		} `json:"api"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		t.Fatalf("decode search dry-run preview: %v", err)
+	}
+	if len(envelope.API) != 1 {
+		t.Fatalf("search dry-run API call count = %d, want 1; preview = %s", len(envelope.API), data)
+	}
+	call := envelope.API[0]
+	if got, _ := call.Params["page_token"].(string); got != want {
+		t.Fatalf("search dry-run params.page_token = %q, want %q; preview = %s", got, want, data)
+	}
+	if _, present := call.Body["page_token"]; present {
+		t.Fatalf("search dry-run body unexpectedly contains page_token; preview = %s", data)
+	}
+}
+
 func searchPaginationStub(t *testing.T, endpoint, responseToken string, hasMore bool, capturedTokens *[]string) *httpmock.Stub {
 	t.Helper()
 	return &httpmock.Stub{
