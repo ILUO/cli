@@ -33,8 +33,8 @@ func TestBuildTasklistSearchBody(t *testing.T) {
 			check: func(t *testing.T, body map[string]interface{}) {
 				filter := body["filter"].(map[string]interface{})
 				createTime := filter["create_time"].(map[string]interface{})
-				if body["page_token"] != "pt_tl" {
-					t.Fatalf("unexpected body: %#v", body)
+				if _, present := body["page_token"]; present {
+					t.Fatalf("body unexpectedly contains page_token: %#v", body)
 				}
 				if filter["user_id"].([]string)[0] != "ou_creator" {
 					t.Fatalf("unexpected filter: %#v", filter)
@@ -90,7 +90,7 @@ func TestSearchTasklist_DryRun(t *testing.T) {
 				_ = cmd.Flags().Set("query", "Q2")
 				_ = cmd.Flags().Set("page-token", "pt_tl")
 			},
-			wantParts: []string{"POST /open-apis/task/v2/tasklists/search", `"query":"Q2"`},
+			wantParts: []string{"POST /open-apis/task/v2/tasklists/search?page_token=pt_tl", `"query":"Q2"`},
 		},
 		{
 			name: "dry run error on invalid create time",
