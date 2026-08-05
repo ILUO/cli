@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
@@ -16,11 +17,13 @@ from difflib import SequenceMatcher, get_close_matches
 from pathlib import Path
 from typing import Any
 
+import sxsd_validator
+
 
 XS_NS = "{http://www.w3.org/2001/XMLSchema}"
 XML_NS = "{http://www.w3.org/XML/1998/namespace}"
 SVG_NS = "{http://www.w3.org/2000/svg}"
-SML_NAMESPACE = "http://www.larkoffice.com/sml/2.0"
+SML_NAMESPACE = "https://www.larkoffice.com/sml/2.0"
 SXSD_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "references" / "slides_xml_schema_definition.xml"
 ICONPARK_INDEX_PATH = Path(__file__).resolve().parents[1] / "references" / "iconpark-index.json"
 SXSD_TAG_ALIASES = {
@@ -44,9 +47,8 @@ ROUNDTRIP_SXSD_ATTRS = {
     ("chartData", "isStaticData"),
 }
 # Slides readback echoes each chartField's CSV text as per-value <chartParsedValues> children;
-# it's server-emitted, absent from the write schema, and appears on virtually every chart-bearing
-# deck, so treating it as an unsupported tag would block per-slide linting document-wide.
-ROUNDTRIP_SXSD_TAGS = {"chartParsedValues"}
+# it is server-emitted and absent from the write schema, so it must not block page linting.
+ROUNDTRIP_SXSD_TAGS = {("chartField", "chartParsedValues")}
 DEFAULT_TABLE_COLUMN_WIDTH = 110
 DEFAULT_TABLE_ROW_HEIGHT = 37
 DEFAULT_TEXT_LINE_SPACING_MULTIPLE = 1.5
@@ -60,6 +62,13 @@ GHOST_TEXT_MIN_FONT_SIZE = 96
 GHOST_TEXT_MAX_ALPHA = 0.5
 GHOST_TEXT_FAINT_MIN_FONT_SIZE = 36
 GHOST_TEXT_FAINT_MAX_ALPHA = 0.35
+# A <line> crossing text glyphs is a legibility defect (see line_crosses_text_glyphs). We erode the
+# glyph box by this margin before testing intersection so a line that only skims a glyph edge or the
+# padding-only text frame -- but does not actually cut through the letterforms -- is not flagged.
+LINE_TEXT_GRAZE_MIN_PX = 2.0
+LINE_TEXT_GRAZE_FONT_RATIO = 0.12
+# A line whose effective stroke alpha is below this is not visibly rendered, so it cannot occlude text.
+LINE_MIN_VISIBLE_ALPHA = 0.08
 # Sub-pixel canvas overflow is floating-point rounding noise (e.g. rotated-bbox math), not a
 # visible defect; keep this well under 1px so real overflow is still always caught.
 CANVAS_OVERFLOW_TOLERANCE = 0.5
@@ -303,77 +312,13 @@ def xml_namespace(tag: str) -> str | None:
     return tag.split("}", 1)[0] + "}" if tag.startswith("{") else None
 
 
-def strip_xsd_prefix(value: str | None) -> str | None:
-    if value is None:
-        return None
-    return value.rsplit(":", 1)[-1]
-
-
-def iter_direct_xsd_children(element: ET.Element, local_name: str) -> list[ET.Element]:
-    return [child for child in element if child.tag == f"{XS_NS}{local_name}"]
-
-
 def load_sxsd_tag_attributes() -> dict[str, set[str]]:
     global _SXSD_TAG_ATTRIBUTES_CACHE
     if _SXSD_TAG_ATTRIBUTES_CACHE is not None:
         return _SXSD_TAG_ATTRIBUTES_CACHE
 
-    schema_root = ET.parse(SXSD_SCHEMA_PATH).getroot()
-    named_complex_types = {
-        complex_type.attrib["name"]: complex_type
-        for complex_type in schema_root.findall(f"{XS_NS}complexType")
-        if complex_type.attrib.get("name")
-    }
-    resolving: set[str] = set()
-
-    def attributes_for_complex_type(complex_type: ET.Element) -> set[str]:
-        attrs: set[str] = {
-            attribute.attrib["name"]
-            for attribute in iter_direct_xsd_children(complex_type, "attribute")
-            if attribute.attrib.get("name")
-        }
-        for content_name in ("simpleContent", "complexContent"):
-            for complex_content in iter_direct_xsd_children(complex_type, content_name):
-                for extension in iter_direct_xsd_children(complex_content, "extension"):
-                    base_type = strip_xsd_prefix(extension.attrib.get("base"))
-                    if base_type:
-                        attrs.update(attributes_for_type(base_type))
-                    attrs.update(
-                        attribute.attrib["name"]
-                        for attribute in iter_direct_xsd_children(extension, "attribute")
-                        if attribute.attrib.get("name")
-                    )
-        return attrs
-
-    def attributes_for_type(type_name: str) -> set[str]:
-        if type_name in resolving:
-            return set()
-        complex_type = named_complex_types.get(type_name)
-        if complex_type is None:
-            return set()
-        resolving.add(type_name)
-        try:
-            return attributes_for_complex_type(complex_type)
-        finally:
-            resolving.remove(type_name)
-
-    tag_attributes: dict[str, set[str]] = {}
-    for element in schema_root.iter(f"{XS_NS}element"):
-        tag_name = element.attrib.get("name")
-        if not tag_name:
-            continue
-
-        attrs: set[str] = set()
-        type_name = strip_xsd_prefix(element.attrib.get("type"))
-        if type_name:
-            attrs.update(attributes_for_type(type_name))
-        for complex_type in iter_direct_xsd_children(element, "complexType"):
-            attrs.update(attributes_for_complex_type(complex_type))
-
-        tag_attributes.setdefault(tag_name, set()).update(attrs)
-
-    _SXSD_TAG_ATTRIBUTES_CACHE = tag_attributes
-    return tag_attributes
+    _SXSD_TAG_ATTRIBUTES_CACHE = sxsd_validator.load_tag_attributes(SXSD_SCHEMA_PATH)
+    return _SXSD_TAG_ATTRIBUTES_CACHE
 
 
 def load_iconpark_icon_types() -> set[str]:
@@ -403,20 +348,26 @@ def build_sxsd_tag_hint(tag_name: str, supported_tags: set[str]) -> str:
     if alias:
         return f"Use {alias} instead of <{tag_name}>."
     if tag_name == "svg":
-        return 'Inside <whiteboard>, write SVG as <svg xmlns="http://www.w3.org/2000/svg">...</svg>.'
+        return 'Inside <embed> or <whiteboard>, write SVG as <svg xmlns="http://www.w3.org/2000/svg">...</svg>.'
     close_matches = get_close_matches(tag_name, sorted(supported_tags), n=3, cutoff=0.72)
     if close_matches:
         return "Unsupported SXSD tag. Did you mean " + ", ".join(f"<{match}>" for match in close_matches) + "?"
     return "Unsupported SXSD tag. Use only tags defined in slides_xml_schema_definition.xml."
 
 
-def build_sxsd_attr_hint(tag_name: str, attr_name: str, allowed_attrs: set[str]) -> str:
+def suggest_sxsd_attrs(attr_name: str, allowed_attrs: set[str]) -> list[str]:
     alias = SXSD_ATTR_ALIASES.get(attr_name)
     if alias and alias in allowed_attrs:
-        return f'Use "{alias}" on <{tag_name}> instead of "{attr_name}".'
-    close_matches = get_close_matches(attr_name, sorted(allowed_attrs), n=3, cutoff=0.68)
-    if close_matches:
-        return "Unsupported SXSD attribute. Did you mean " + ", ".join(f'"{match}"' for match in close_matches) + "?"
+        return [alias]
+    return get_close_matches(attr_name, sorted(allowed_attrs), n=3, cutoff=0.68)
+
+
+def build_sxsd_attr_hint(tag_name: str, attr_name: str, allowed_attrs: set[str]) -> str:
+    suggestions = suggest_sxsd_attrs(attr_name, allowed_attrs)
+    if suggestions:
+        if SXSD_ATTR_ALIASES.get(attr_name) == suggestions[0]:
+            return f'Use "{suggestions[0]}" on <{tag_name}> instead of "{attr_name}".'
+        return "Unsupported SXSD attribute. Did you mean " + ", ".join(f'"{match}"' for match in suggestions) + "?"
     allowed_summary = ", ".join(sorted(allowed_attrs)[:8])
     if len(allowed_attrs) > 8:
         allowed_summary += ", ..."
@@ -424,17 +375,40 @@ def build_sxsd_attr_hint(tag_name: str, attr_name: str, allowed_attrs: set[str])
 
 
 def should_skip_sxsd_subtree(element: ET.Element, ancestors: list[str]) -> bool:
-    return "whiteboard" in ancestors and xml_namespace(element.tag) == SVG_NS
+    return ("whiteboard" in ancestors or "embed" in ancestors) and xml_namespace(element.tag) == SVG_NS
 
 
 def should_skip_sxsd_attribute(tag_name: str, attr_name: str) -> bool:
     return attr_name in SERVER_FILLED_SXSD_ATTRS or (tag_name, attr_name) in ROUNDTRIP_SXSD_ATTRS
 
 
-def validate_sxsd_tag_attributes(root: ET.Element) -> list[dict[str, Any]]:
+def should_skip_sxsd_tag(parent_name: str | None, tag_name: str) -> bool:
+    return (parent_name, tag_name) in ROUNDTRIP_SXSD_TAGS
+
+
+def without_server_filled_sxsd_fields(root: ET.Element) -> ET.Element:
+    sanitized_root = copy.deepcopy(root)
+
+    def sanitize(element: ET.Element) -> None:
+        tag_name = xml_local_name(element.tag)
+        for raw_attr_name in list(element.attrib):
+            if should_skip_sxsd_attribute(tag_name, xml_local_name(raw_attr_name)):
+                del element.attrib[raw_attr_name]
+        for child in list(element):
+            if should_skip_sxsd_tag(tag_name, xml_local_name(child.tag)):
+                element.remove(child)
+                continue
+            sanitize(child)
+
+    sanitize(sanitized_root)
+    return sanitized_root
+
+
+def validate_sxsd_document(xml: str, root: ET.Element) -> list[dict[str, Any]]:
     tag_attributes = load_sxsd_tag_attributes()
     supported_tags = set(tag_attributes)
     issues: list[dict[str, Any]] = []
+    suggested_attr_candidates: dict[tuple[str, str], list[set[str]]] = {}
 
     def visit(element: ET.Element, ancestors: list[str], path: str) -> None:
         if should_skip_sxsd_subtree(element, ancestors):
@@ -442,7 +416,8 @@ def validate_sxsd_tag_attributes(root: ET.Element) -> list[dict[str, Any]]:
 
         tag_name = xml_local_name(element.tag)
         current_path = f"{path}/{tag_name}" if path else tag_name
-        if tag_name in ROUNDTRIP_SXSD_TAGS:
+        parent_name = ancestors[-1] if ancestors else None
+        if should_skip_sxsd_tag(parent_name, tag_name):
             return
         if tag_name not in supported_tags:
             issues.append(
@@ -466,6 +441,11 @@ def validate_sxsd_tag_attributes(root: ET.Element) -> list[dict[str, Any]]:
                     continue
                 if attr_name in allowed_attrs:
                     continue
+                suggestions = suggest_sxsd_attrs(attr_name, allowed_attrs)
+                if suggestions:
+                    suggested_attr_candidates.setdefault((current_path, tag_name), []).append(
+                        set(suggestions)
+                    )
                 issues.append(
                     {
                         "level": "error",
@@ -480,6 +460,123 @@ def validate_sxsd_tag_attributes(root: ET.Element) -> list[dict[str, Any]]:
 
         for child in element:
             visit(child, [*ancestors, tag_name], current_path)
+
+    visit(root, [], "")
+    existing = {
+        (issue.get("code"), issue.get("path"), issue.get("tag"), issue.get("attr"))
+        for issue in issues
+    }
+    unsupported_tag_locations = {
+        (issue.get("path"), issue.get("tag"))
+        for issue in issues
+        if issue.get("code") == "sxsd_unsupported_tag"
+    }
+    schema_issues = _validate_sxsd_schema_constraints(xml, root)
+    missing_attrs_by_location: dict[tuple[str, str], set[str]] = {}
+    for schema_issue in schema_issues:
+        if schema_issue.get("code") != "sxsd_missing_required_attr":
+            continue
+        location = (schema_issue.get("path"), schema_issue.get("tag"))
+        missing_attrs_by_location.setdefault(location, set()).add(schema_issue.get("attr"))
+
+    suggested_attrs: set[tuple[str, str, str]] = set()
+    for location, candidate_groups in suggested_attr_candidates.items():
+        missing_attrs = missing_attrs_by_location.get(location, set())
+        for candidates in candidate_groups:
+            matching_missing_attrs = candidates & missing_attrs
+            if len(matching_missing_attrs) == 1:
+                suggested_attrs.add((*location, next(iter(matching_missing_attrs))))
+
+    for schema_issue in schema_issues:
+        if schema_issue.get("code") == "sxsd_unexpected_child" and (
+            schema_issue.get("path"),
+            schema_issue.get("tag"),
+        ) in unsupported_tag_locations:
+            continue
+        if schema_issue.get("code") == "sxsd_missing_required_attr" and (
+            schema_issue.get("path"),
+            schema_issue.get("tag"),
+            schema_issue.get("attr"),
+        ) in suggested_attrs:
+            continue
+        key = (
+            schema_issue.get("code"),
+            schema_issue.get("path"),
+            schema_issue.get("tag"),
+            schema_issue.get("attr"),
+        )
+        if key not in existing:
+            issues.append(schema_issue)
+    return issues
+
+
+def _validate_sxsd_schema_constraints(xml: str, root: ET.Element) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    if re.match(r"^\s*<\?xml\b", xml):
+        issues.append(
+            {
+                "level": "error",
+                "code": "sxsd_unsupported_declaration",
+                "path": xml_local_name(root.tag),
+                "tag": xml_local_name(root.tag),
+                "expected": "SXSD document without an XML declaration",
+                "actual": "<?xml ...?>",
+                "message": "XML declarations are not supported by the Slides SXSD write format",
+                "hint": "Remove the <?xml ...?> declaration and keep the SXSD root element.",
+            }
+        )
+
+    issues.extend(
+        sxsd_validator.validate_sxsd(
+            without_server_filled_sxsd_fields(root),
+            SXSD_SCHEMA_PATH,
+        )
+    )
+    issues.extend(validate_embed_svg_roots(root))
+    return issues
+
+
+def validate_embed_svg_roots(root: ET.Element) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    document_namespace = sxsd_validator.element_namespace(root.tag)
+    is_bare_slide_fragment = (
+        xml_local_name(root.tag) == "slide" and document_namespace is None
+    )
+    if (
+        document_namespace not in sxsd_validator.ACCEPTED_SML_NAMESPACES
+        and not is_bare_slide_fragment
+    ):
+        return issues
+
+    def visit(element: ET.Element, ancestors: list[str], parent_path: str) -> None:
+        if should_skip_sxsd_subtree(element, ancestors):
+            return
+
+        tag_name = xml_local_name(element.tag)
+        path = f"{parent_path}/{tag_name}" if parent_path else tag_name
+        if (
+            tag_name == "embed"
+            and sxsd_validator.element_namespace(element.tag) == document_namespace
+        ):
+            for child in element:
+                if xml_namespace(child.tag) != SVG_NS or xml_local_name(child.tag) == "svg":
+                    continue
+                child_name = xml_local_name(child.tag)
+                child_path = f"{path}/{child_name}"
+                issues.append(
+                    {
+                        "level": "error",
+                        "code": "sxsd_unexpected_child",
+                        "path": child_path,
+                        "tag": child_name,
+                        "expected": '<svg xmlns="http://www.w3.org/2000/svg">',
+                        "actual": child_name,
+                        "message": f"embedded SVG content must use an <svg> root at {child_path}",
+                        "hint": 'Wrap the SVG content in <svg xmlns="http://www.w3.org/2000/svg">...</svg>.',
+                    }
+                )
+        for child in element:
+            visit(child, [*ancestors, tag_name], path)
 
     visit(root, [], "")
     return issues
@@ -527,8 +624,11 @@ def validate_iconpark_icon_types(root: ET.Element) -> list[dict[str, Any]]:
             }
         )
 
-    def visit(element: ET.Element, path: str) -> None:
+    def visit(element: ET.Element, ancestors: list[str], path: str) -> None:
         nonlocal supported_icon_types
+        if should_skip_sxsd_subtree(element, ancestors):
+            return
+
         tag_name = xml_local_name(element.tag)
         current_path = f"{path}/{tag_name}" if path else tag_name
         if tag_name == "icon":
@@ -568,9 +668,9 @@ def validate_iconpark_icon_types(root: ET.Element) -> list[dict[str, Any]]:
                     }
                 )
         for child in element:
-            visit(child, current_path)
+            visit(child, [*ancestors, tag_name], current_path)
 
-    visit(root, "")
+    visit(root, [], "")
     return issues
 
 
@@ -633,7 +733,8 @@ def validate_sml_tag_prefixes(xml: str) -> list[dict[str, Any]]:
         if not prefix:
             return
 
-        if namespace_map.get(prefix) != SML_NAMESPACE:
+        actual_namespace = namespace_map.get(prefix)
+        if actual_namespace not in sxsd_validator.ACCEPTED_SML_NAMESPACES:
             return
         path = "/".join(element_stack)
         issues.append(
@@ -641,7 +742,7 @@ def validate_sml_tag_prefixes(xml: str) -> list[dict[str, Any]]:
                 "level": "error",
                 "code": "sml_prefixed_tag",
                 "tag": element_name,
-                "namespace": SML_NAMESPACE,
+                "namespace": actual_namespace,
                 "path": path,
                 "line": parser.CurrentLineNumber,
                 "column": parser.CurrentColumnNumber,
@@ -685,24 +786,45 @@ def validate_xml_well_formed(xml: str) -> dict[str, Any] | None:
     return xml_error
 
 
-def parse_presentation(xml: str) -> dict[str, Any]:
-    presentation_match = re.search(r"<presentation\b([^>]*)>", xml)
-    if presentation_match:
-        return {
-            "width": int(float(extract_attribute(presentation_match.group(1), "width") or 960)),
-            "height": int(float(extract_attribute(presentation_match.group(1), "height") or 540)),
-            "slides": re.findall(r"<slide\b[\s\S]*?</slide>", xml),
+def serialize_slide_for_layout(slide_root: ET.Element) -> str:
+    slide_copy = copy.deepcopy(slide_root)
+    for element in slide_copy.iter():
+        if not isinstance(element.tag, str):
+            continue
+        element.tag = xml_local_name(element.tag)
+        attributes = {
+            xml_local_name(attribute_name): value
+            for attribute_name, value in element.attrib.items()
         }
-    slide_match = re.findall(r"<slide\b[\s\S]*?</slide>", xml)
-    if slide_match:
-        return {"width": 960, "height": 540, "slides": slide_match}
-    fail("input must contain a <presentation> or <slide> root")
+        element.attrib.clear()
+        element.attrib.update(attributes)
+    return ET.tostring(slide_copy, encoding="unicode")
+
+
+def parse_presentation(root: ET.Element) -> dict[str, Any]:
+    root_name = xml_local_name(root.tag)
+    if root_name == "slide":
+        slide_roots = [root]
+        width = 960
+        height = 540
+    elif root_name == "presentation":
+        slide_roots = [child for child in root if xml_local_name(child.tag) == "slide"]
+        width = int(float(root.attrib.get("width", 960)))
+        height = int(float(root.attrib.get("height", 540)))
+    else:
+        fail("input must contain a <presentation> or <slide> root")
+    return {
+        "width": width,
+        "height": height,
+        "slides": [serialize_slide_for_layout(slide_root) for slide_root in slide_roots],
+        "slide_roots": slide_roots,
+    }
 
 
 def extract_elements(slide_xml: str) -> list[dict[str, Any]]:
     elements: list[dict[str, Any]] = []
 
-    for match in re.finditer(r"<(shape|img|table|chart|whiteboard)\b([^>]*)>", slide_xml):
+    for match in re.finditer(r"<(shape|img|table|chart|whiteboard|embed)\b([^>]*)>", slide_xml):
         kind, attrs = match.group(1), match.group(2)
         is_self_closing = attrs.rstrip().endswith("/")
         content = ""
@@ -1500,8 +1622,6 @@ def detect_elements_out_of_canvas(
         if element["kind"] in {"table", "chart"}
         or (element["kind"] == "shape" and element["type"] in {"rect", "text"})
     ):
-        if is_ghost_text(element):
-            continue
         bbox = element_canvas_bbox(element)
         overflow = {
             "left": max(-bbox["x"], 0),
@@ -1611,6 +1731,93 @@ def detect_table_layout_size_mismatches(elements: list[dict[str, Any]]) -> list[
     return issues
 
 
+def segment_intersects_rect(
+    x1: float, y1: float, x2: float, y2: float, rect: dict[str, int | float]
+) -> bool:
+    """True when segment (x1,y1)-(x2,y2) enters the axis-aligned rect (Liang-Barsky clip)."""
+    left = rect["x"]
+    top = rect["y"]
+    right = rect["x"] + rect["width"]
+    bottom = rect["y"] + rect["height"]
+    if right <= left or bottom <= top:
+        return False
+    dx = x2 - x1
+    dy = y2 - y1
+    if dx == 0 and dy == 0:
+        return left <= x1 <= right and top <= y1 <= bottom
+    t_enter, t_exit = 0.0, 1.0
+    for delta, distance in ((-dx, x1 - left), (dx, right - x1), (-dy, y1 - top), (dy, bottom - y1)):
+        if delta == 0:
+            if distance < 0:
+                return False
+            continue
+        t = distance / delta
+        if delta < 0:
+            t_enter = max(t_enter, t)
+        else:
+            t_exit = min(t_exit, t)
+        if t_enter > t_exit:
+            return False
+    return True
+
+
+def line_text_graze_margin(text_element: dict[str, Any]) -> float:
+    font_size = text_element["fontSize"] if isinstance(text_element.get("fontSize"), (int, float)) else 16
+    return max(font_size * LINE_TEXT_GRAZE_FONT_RATIO, LINE_TEXT_GRAZE_MIN_PX)
+
+
+def erode_rect(rect: dict[str, int | float], margin: float) -> dict[str, int | float] | None:
+    width = rect["width"] - 2 * margin
+    height = rect["height"] - 2 * margin
+    if width <= 0 or height <= 0:
+        return None
+    return {"x": rect["x"] + margin, "y": rect["y"] + margin, "width": width, "height": height}
+
+
+def line_crosses_text(line: dict[str, Any], text_element: dict[str, Any]) -> bool:
+    if not is_visually_rendered(line) or line.get("alpha", 1) < LINE_MIN_VISIBLE_ALPHA:
+        return False
+    if not is_text_element(text_element) or not has_text_content(text_element):
+        return False
+    if is_ghost_text(text_element) or is_decorative_text(text_element):
+        return False
+    glyph_bbox = estimate_text_visual_bbox(text_element)
+    if glyph_bbox is None:
+        return False
+    # Erode the glyph box so a line skimming the letter edge or only clipping the padding-only text
+    # frame is exempt; only a line that actually cuts through the letterforms is a crossing.
+    target = erode_rect(glyph_bbox, line_text_graze_margin(text_element))
+    if target is None:
+        return False
+    return segment_intersects_rect(
+        line["startX"], line["startY"], line["endX"], line["endY"], target
+    )
+
+
+def detect_line_text_crossings(
+    slide_xml: str, elements: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    lines = extract_line_elements(slide_xml)
+    if not lines:
+        return []
+    text_elements = [element for element in elements if is_text_element(element)]
+    issues: list[dict[str, Any]] = []
+    for line in lines:
+        for text_element in text_elements:
+            if not line_crosses_text(line, text_element):
+                continue
+            issues.append(
+                {
+                    "level": "error",
+                    "code": "bbox_overlap",
+                    "elements": [line["id"], text_element["id"]],
+                    "message": f'line {line["id"]} crosses text {text_element["id"]}',
+                    "hint": "Move the line off the text glyphs so it no longer cuts through the letterforms.",
+                }
+            )
+    return issues
+
+
 def lint_slide(
     slide_xml: str, slide_number: int, slide_width: int | float = 960, slide_height: int | float = 540
 ) -> dict[str, Any]:
@@ -1621,6 +1828,7 @@ def lint_slide(
         *detect_table_layout_size_mismatches(elements),
         *detect_text_may_overflow_shapes(elements),
         *detect_image_text_occlusions(elements),
+        *detect_line_text_crossings(slide_xml, elements),
     ]
 
     for index, left in enumerate(elements):
@@ -1917,7 +2125,7 @@ def slide_content_visual_bbox(
         # a straight horizontal/vertical line has zero width or height in one axis; clipped_bbox
         # treats zero-area rects as invisible, so pad to its rendered stroke thickness instead.
         return clipped_bbox(line_stroke_bbox(element), slide_bbox)
-    if element["kind"] in {"img", "chart", "table", "whiteboard", "icon", "polyline"}:
+    if element["kind"] in {"img", "chart", "table", "whiteboard", "embed", "icon", "polyline"}:
         return clipped_bbox(element, slide_bbox)
     return None
 
@@ -1955,7 +2163,7 @@ def is_slide_content_present(
 
 
 def is_large_visual_child(element: dict[str, Any], container: dict[str, Any]) -> bool:
-    if element["kind"] not in {"img", "chart", "table", "whiteboard"}:
+    if element["kind"] not in {"img", "chart", "table", "whiteboard", "embed"}:
         return False
     if not is_visually_rendered(element):
         return False
@@ -2226,7 +2434,7 @@ def related_object(element: dict[str, Any]) -> dict[str, Any]:
 
 def extract_line_elements(slide_xml: str) -> list[dict[str, Any]]:
     elements: list[dict[str, Any]] = []
-    for match in re.finditer(r"<line\b([^>]*)>", slide_xml):
+    for match in re.finditer(r"<line\b([^>]*?)(/?)>", slide_xml):
         attrs = match.group(1)
         start_x = extract_numeric_attribute(attrs, "startX")
         start_y = extract_numeric_attribute(attrs, "startY")
@@ -2235,6 +2443,15 @@ def extract_line_elements(slide_xml: str) -> list[dict[str, Any]]:
         if any(value is None for value in (start_x, start_y, end_x, end_y)):
             continue
         line_alpha = extract_numeric_attribute(attrs, "alpha")
+        base_alpha = line_alpha if line_alpha is not None else 1
+        border_alpha = 1
+        if match.group(2) != "/":
+            close_index = slide_xml.find("</line>", match.end())
+            body = slide_xml[match.end() : close_index] if close_index != -1 else ""
+            border_attrs = extract_tag_attributes(body, "border")
+            color_alpha = extract_color_alpha(extract_attribute(border_attrs, "color"))
+            if isinstance(color_alpha, (int, float)):
+                border_alpha = color_alpha
         elements.append(
             {
                 "id": extract_attribute(attrs, "id") or f"line-{len(elements) + 1}",
@@ -2244,8 +2461,12 @@ def extract_line_elements(slide_xml: str) -> list[dict[str, Any]]:
                 "y": min(start_y, end_y),
                 "width": abs(end_x - start_x),
                 "height": abs(end_y - start_y),
+                "startX": start_x,
+                "startY": start_y,
+                "endX": end_x,
+                "endY": end_y,
                 "rotation": 0,
-                "alpha": line_alpha if line_alpha is not None else 1,
+                "alpha": base_alpha * border_alpha,
                 "order": len(elements),
             }
         )
@@ -2311,6 +2532,21 @@ def slide_status(errors: list[dict[str, Any]], warnings: list[dict[str, Any]]) -
     return "passed"
 
 
+def is_slide_scoped_sxsd_issue(issue: dict[str, Any], root_name: str) -> bool:
+    if issue.get("code") == "sxsd_unsupported_declaration":
+        return False
+    if root_name == "slide":
+        return True
+    path = issue.get("path")
+    if not isinstance(path, str):
+        return False
+    if path.startswith("presentation/slide/"):
+        return True
+    return path == "presentation/slide" and (
+        issue.get("attr") is not None or issue.get("code") == "sxsd_invalid_namespace"
+    )
+
+
 def build_result(
     source_path: str | None,
     slide_size: dict[str, int | float],
@@ -2366,11 +2602,20 @@ def lint_xml(xml: str, source_path: str | None = None) -> dict[str, Any]:
         raise AssertionError("parse_xml_root must return a root or error")
 
     namespace_issues = validate_sml_tag_prefixes(xml)
-    sxsd_issues = validate_sxsd_tag_attributes(root)
+    root_name = xml_local_name(root.tag)
+    sxsd_issues = validate_sxsd_document(xml, root)
     iconpark_issues = validate_iconpark_icon_types(root)
     top_level_issues = [
         normalize_issue(issue, None, {})
-        for issue in [*namespace_issues, *sxsd_issues, *iconpark_issues]
+        for issue in [
+            *namespace_issues,
+            *[
+                issue
+                for issue in sxsd_issues
+                if not is_slide_scoped_sxsd_issue(issue, root_name)
+            ],
+            *iconpark_issues,
+        ]
     ]
     if any(issue["level"] == "error" for issue in top_level_issues):
         return build_result(
@@ -2380,10 +2625,36 @@ def lint_xml(xml: str, source_path: str | None = None) -> dict[str, Any]:
             [],
         )
 
-    presentation = parse_presentation(xml)
+    presentation = parse_presentation(root)
+    slide_roots = presentation["slide_roots"]
     slides: list[dict[str, Any]] = []
     for index, slide_xml in enumerate(presentation["slides"]):
         slide_number = index + 1
+        slide_root = slide_roots[index]
+        slide_sxsd_issues = [
+            normalize_issue(issue, slide_number, {})
+            for issue in validate_sxsd_document(slide_xml, slide_root)
+        ]
+        slide_sxsd_errors = [
+            issue for issue in slide_sxsd_issues if issue["level"] == "error"
+        ]
+        if slide_sxsd_errors:
+            slide_sxsd_warnings = [
+                issue for issue in slide_sxsd_issues if issue["level"] == "warning"
+            ]
+            slides.append(
+                {
+                    "slide_number": slide_number,
+                    "status": slide_status(slide_sxsd_errors, slide_sxsd_warnings),
+                    "element_count": 0,
+                    "errors": slide_sxsd_errors,
+                    "warnings": slide_sxsd_warnings,
+                    "infos": [],
+                    "issues": slide_sxsd_issues,
+                }
+            )
+            continue
+
         geometry = lint_slide(
             slide_xml,
             slide_number,
@@ -2429,8 +2700,11 @@ def lint_xml(xml: str, source_path: str | None = None) -> dict[str, Any]:
             ),
         ]
         issues = [
-            normalize_issue(issue, slide_number, elements_by_id)
-            for issue in raw_issues
+            *slide_sxsd_issues,
+            *[
+                normalize_issue(issue, slide_number, elements_by_id)
+                for issue in raw_issues
+            ],
         ]
         errors = [issue for issue in issues if issue["level"] == "error"]
         warnings = [issue for issue in issues if issue["level"] == "warning"]
@@ -2467,8 +2741,9 @@ def run_cli(argv: list[str] | None = None) -> None:
     if not options.get("input"):
         print_usage()
         fail("--input is required")
-    input_path = Path(options["input"]).resolve()
-    result = lint_xml(read_file(input_path), str(input_path))
+    requested_path = options["input"]
+    resolved_path = Path(requested_path).resolve()
+    result = lint_xml(read_file(resolved_path), requested_path)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["summary"]["error_count"] > 0:
         raise SystemExit(1)
