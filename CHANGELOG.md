@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.88] - 2026-08-18
+
+### Features
+
+- fix doc skill about identity coutinue (#2334)
+- **base**: clarify skill routing and references (#2347)
+- **sheets**: accept the --range / --cells / border shapes callers actually send (#2338)
+- **slides**: auto-upload @path images in +update-slide (#2346)
+- **docs**: support comments and block mutation ranges (#2341)
+- **slides**: add kickoff reminder for empty presentations (#2367)
+- support separate and suite skill layouts (#2211)
+
+### Bug Fixes
+
+- **base**: improve record history output and validation (#2298)
+- **api**: reject query strings and fragments in paths (#2375)
+
+### Documentation
+
+- **base**: restructure skill routing and analysis guidance (#2320)
+- **lark-shared**: split SKILL.md into a slim core plus references (#2226)
+
+### Tests
+
+- **docs**: align fetch help comment expectations (#2363)
+
+## [v1.0.87] - 2026-08-13
+
+### Features
+
+- **base**: add typed NDJSON workflows for professional data analysis (#2196)
+- propagate credential metadata (#2305)
+- **calendar**: support setting VC meeting owner in +create (#2328)
+- **base**: support BaseApp application mode (#2231)
+
+### Bug Fixes
+
+- **apps**: reject non-HTML apps in +html-publish with actionable error (#2300)
+- **apps**: friendly-ize "Container not exists" for observability commands (#2302)
+- **drive**: guide wiki permission recovery (#2311)
+- **wiki**: guide recovery from node structural limits (#2290)
+- **wiki**: bound node retries (#2292)
+
+### Documentation
+
+- make enterprise/embedded integration discoverable from the repo (#2066)
+- **base**: add common filter condition examples (#2310)
+- **lark-im**: support user and bot identities for resource uploads (#2319)
+- **calendar**: clarify +create-first strategy for advanced fields (#2336)
+
+### Misc
+
+- add Base skill code owner (#2303)
+
 ## [v1.0.86] - 2026-08-11
 
 ### Features
@@ -1902,6 +1956,8 @@ Bundled AI agent skills for intelligent assistance:
 - Bilingual documentation (English & Chinese).
 - CI/CD pipelines: linting, testing, coverage reporting, and automated releases.
 
+[v1.0.88]: https://github.com/larksuite/cli/releases/tag/v1.0.88
+[v1.0.87]: https://github.com/larksuite/cli/releases/tag/v1.0.87
 [v1.0.86]: https://github.com/larksuite/cli/releases/tag/v1.0.86
 [v1.0.85]: https://github.com/larksuite/cli/releases/tag/v1.0.85
 [v1.0.84]: https://github.com/larksuite/cli/releases/tag/v1.0.84
