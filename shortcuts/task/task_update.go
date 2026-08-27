@@ -33,9 +33,7 @@ var UpdateTask = common.Shortcut{
 		{Name: "due", Desc: "due date (ISO 8601 / date:YYYY-MM-DD / relative:+2d / ms timestamp)"},
 		{Name: "data", Desc: "JSON payload for task object"},
 	},
-	PrintFlagSchema: common.MethodFlagSchemaPrinter("task.tasks.patch", map[string]string{
-		"data": "data.task",
-	}),
+	PrintFlagSchema: printTaskUpdateDataFlagSchema,
 
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		_, err := parseTaskGUIDs(runtime.Str("task-id"))

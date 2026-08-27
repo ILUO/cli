@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lark Technologies Pte. Ltd.
 // SPDX-License-Identifier: MIT
 
-package common
+package task
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"github.com/larksuite/cli/internal/meta"
 )
 
-func TestMethodFlagSchemaPrinterProjectsConfiguredInputSubtree(t *testing.T) {
+func TestTaskUpdateDataFlagSchemaProjectsTaskInput(t *testing.T) {
 	catalog := apicatalog.New(apicatalog.SourceEmbedded, []meta.Service{
 		{
 			Name: "task",
@@ -40,15 +40,10 @@ func TestMethodFlagSchemaPrinterProjectsConfiguredInputSubtree(t *testing.T) {
 			},
 		},
 	})
-	printer := methodFlagSchemaPrinter(
-		func() apicatalog.Catalog { return catalog },
-		"task.tasks.patch",
-		map[string]string{"data": "data.task"},
-	)
 
-	raw, err := printer("data")
+	raw, err := taskUpdateDataFlagSchema(catalog, "data")
 	if err != nil {
-		t.Fatalf("printer(data) error = %v", err)
+		t.Fatalf("taskUpdateDataFlagSchema(data) error = %v", err)
 	}
 	var schema struct {
 		Type       string                 `json:"type"`
@@ -61,9 +56,9 @@ func TestMethodFlagSchemaPrinterProjectsConfiguredInputSubtree(t *testing.T) {
 		t.Fatalf("projected schema = %#v, want task object only", schema)
 	}
 
-	nested, err := printer("data.due.timestamp")
+	nested, err := taskUpdateDataFlagSchema(catalog, "data.due.timestamp")
 	if err != nil {
-		t.Fatalf("printer(data.due.timestamp) error = %v", err)
+		t.Fatalf("taskUpdateDataFlagSchema(data.due.timestamp) error = %v", err)
 	}
 	var timestampSchema map[string]interface{}
 	if err := json.Unmarshal(nested, &timestampSchema); err != nil {
@@ -74,28 +69,23 @@ func TestMethodFlagSchemaPrinterProjectsConfiguredInputSubtree(t *testing.T) {
 	}
 }
 
-func TestMethodFlagSchemaPrinterListsAndValidatesFlags(t *testing.T) {
+func TestTaskUpdateDataFlagSchemaListsAndValidatesFlag(t *testing.T) {
 	catalog := apicatalog.New(apicatalog.SourceEmbedded, []meta.Service{
-		{Name: "demo", Resources: map[string]meta.Resource{
-			"items": {Methods: map[string]meta.Method{
-				"patch": {RequestBody: map[string]meta.Field{"item": {Type: "object"}}},
+		{Name: "task", Resources: map[string]meta.Resource{
+			"tasks": {Methods: map[string]meta.Method{
+				"patch": {RequestBody: map[string]meta.Field{"task": {Type: "object"}}},
 			}},
 		}},
 	})
-	printer := methodFlagSchemaPrinter(
-		func() apicatalog.Catalog { return catalog },
-		"demo.items.patch",
-		map[string]string{"data": "data.item"},
-	)
 
-	listed, err := printer("")
+	listed, err := taskUpdateDataFlagSchema(catalog, "")
 	if err != nil {
-		t.Fatalf("printer(list) error = %v", err)
+		t.Fatalf("taskUpdateDataFlagSchema(list) error = %v", err)
 	}
 	if string(listed) == "" {
-		t.Fatal("printer(list) returned empty output")
+		t.Fatal("taskUpdateDataFlagSchema(list) returned empty output")
 	}
-	if _, err := printer("unknown"); err == nil {
-		t.Fatal("printer(unknown) error = nil, want validation error")
+	if _, err := taskUpdateDataFlagSchema(catalog, "unknown"); err == nil {
+		t.Fatal("taskUpdateDataFlagSchema(unknown) error = nil, want validation error")
 	}
 }
