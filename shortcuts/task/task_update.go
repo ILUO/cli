@@ -30,7 +30,7 @@ var UpdateTask = common.Shortcut{
 		{Name: "task-id", Desc: "task GUID or task applink URL (comma-separated for multiple)", Required: true},
 		{Name: "summary", Desc: "task title"},
 		{Name: "description", Desc: "task description"},
-		{Name: "due", Desc: "due date (ISO 8601 / date:YYYY-MM-DD / relative:+2d / ms timestamp)"},
+		{Name: "due", Desc: "due date (e.g. 2027-04-18, 2027-04-18T10:00:00+08:00, +2d, or ms timestamp)"},
 		{Name: "data", Desc: "JSON object containing only fields exposed by --print-schema"},
 	},
 	PrintFlagSchema: printTaskUpdateDataFlagSchema,

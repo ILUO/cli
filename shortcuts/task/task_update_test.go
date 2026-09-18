@@ -84,6 +84,32 @@ func TestTaskShortcutHelpSeparatesPatchFieldsFromAssigneeRelationships(t *testin
 	}
 }
 
+func TestTaskDueHelpUsesConcreteExamplesWithoutTypePrefix(t *testing.T) {
+	f, _, _, _ := taskShortcutTestFactory(t)
+	parent := &cobra.Command{Use: "task"}
+	CreateTask.Mount(parent, f)
+	UpdateTask.Mount(parent, f)
+
+	for _, name := range []string{"+create", "+update"} {
+		cmd, _, err := parent.Find([]string{name})
+		if err != nil {
+			t.Fatalf("find %s: %v", name, err)
+		}
+		due := cmd.Flags().Lookup("due")
+		if due == nil {
+			t.Fatalf("%s missing --due flag", name)
+		}
+		if strings.Contains(due.Usage, "date:") {
+			t.Errorf("%s --due usage = %q, must not contain ambiguous date: prefix", name, due.Usage)
+		}
+		for _, example := range []string{"2027-04-18", "+2d"} {
+			if !strings.Contains(due.Usage, example) {
+				t.Errorf("%s --due usage = %q, want concrete example %q", name, due.Usage, example)
+			}
+		}
+	}
+}
+
 func TestTaskUpdateDryRunPreviewsEveryTaskID(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("task-id", "task-guid-1,https://applink.larksuite.com/client/todo/detail?guid=task-guid-2", "")
