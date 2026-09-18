@@ -2,6 +2,145 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.0.96] - 2026-09-16
+
+### Features
+
+- **base**: support dashboard NPS config (#2562)
+- **apps**: add +export to download an app's source code as a zip (#2594)
+- **sheets**: accept the parameter spellings two reflow windows say callers write (#2710)
+- **slides**: consolidate xml-get skill docs (#2662)
+
+### Bug Fixes
+
+- 优化工作流记录相关触发器的 Skill，消除歧义和语义错误 (#2670)
+- **minutes**: enforce deterministic search ordering (#2714)
+- **base**: repair skill references and clarify view creation (#2725)
+- restrict chat creation to tenant token (#2728)
+- **skills**: use GUIDE.md for nested suite guides (#2634)
+- **vc**: restrict meeting join and leave to bot (#2570)
+- **apps**: only treat a JSON body as export's error envelope, stream any other type (#2731)
+
+### Documentation
+
+- **base**: add view selection and lifecycle reference (#2729)
+
+### Tests
+
+- **base**: fix NPS workflow rating fixture (#2730)
+
+## [v1.0.95] - 2026-09-10
+
+### Features
+
+- **sheets**: accept the payload spellings the 08-29..31 reflow rejected (#2611)
+- **sheets**: add chart sizing and quality checks (#2504)
+- **docs**: await asynchronous document creation (#2641)
+- **im**: add concise message output (#2567)
+- Supports sorting of questions in the Base form (#2598)
+- add lazy API catalog routing (#2232)
+
+### Bug Fixes
+
+- list workspace entity 上限调整为 30 (#2646)
+- **apps**: classify db failures by their k_dl subcode (#2650)
+- handle credential and config read failures (#2583)
+- **wiki**: resolve node-get through node_by_token (#2665)
+- **docs**: resolve draft resources and validate explicit constraints (#2675)
+- **wiki**: migrate mutation lookups to node_by_token (#2676)
+- **base**: validate dashboard update filters (#2631)
+- **base**: make table and field lists fetch all items (#2674)
+- **drive**: migrate wiki lookups to node_by_token (#2682)
+- **drive**: improve token recognition for download and preview (#2680)
+- **sheets,slides**: migrate wiki lookups to node_by_token (#2696)
+- **base**: migrate wiki lookup to node_by_token (#2699)
+- **docs**: migrate wiki lookups to node_by_token (#2689)
+- **base**: preserve unsupported record values in NDJSON exports (#2701)
+- reduce vulnerable dependencies while retaining Go 1.23 (#2659)
+
+### Documentation
+
+- **im**: document folder expansion and download guidance (#2633)
+- **skills**: use wiki node shortcut in guidance (#2702)
+
+## [v1.0.94] - 2026-09-07
+
+### Features
+
+- 支持会议搜索使用机器人身份 (#2445)
+- **vc**: distinguish detected meeting share starts (#2541)
+- **slides**: lint slide writes server-side, add --no-lint to opt out (#2607)
+- validate generated API parameter constraints (#2514)
+- **base**: support AI classification and AI Analysis Action (#2590)
+- add mail rule shortcuts (#2327)
+- **calendar**: remove app_link from event outputs, emphasize share link (#2618)
+- expand folder children one level in IM message output (#2606)
+- use remote scopes.json for login scope recommendations (#1799)
+
+### Bug Fixes
+
+- **base**: repair field schema template reference (#2575)
+- **base**: improve search recovery and form deletion safety (#2422)
+- honor requiredScopes conjunction in CollectScopesForProjects (#1878)
+- **output**: preserve non-data payloads in the api success envelope (#2601)
+- **suggest**: surface both halves of a welded compound flag name (#2604)
+- optimize calendar and vc (#2616)
+
+### Documentation
+
+- **skills**: fix broken reference links (#2485)
+
+### Misc
+
+- Add mail thread management shortcuts (#2370)
+- **slides**: sync XML schema (2026-09-01) (#2589)
+
+## [v1.0.93] - 2026-09-01
+
+### Features
+
+- **docs**: route local Word media uploads to office mount point (#2568)
+- **base**: support ranking dashboard blocks (#2528)
+- **sheets**: cut the top command-error clusters from the 08-18..24 eval batch (#2559)
+- add shortcut for +list-attendees (#2591)
+- **vfs**: allow absolute paths under a built-in path policy (#2580)
+
+### Bug Fixes
+
+- **event**: preserve UTF-8 in truncated diagnostics (#2535)
+- **base**: correct reminder trigger offset direction (#2584)
+- **shortcuts**: remove non-actionable stderr progress (#2532)
+
+### Documentation
+
+- **lark-doc**: retain draft workspaces after creation (#2574)
+- **sheets**: clarify dropdown values and default colors (#2582)
+
+### Refactoring
+
+- **sheets**: remove legacy sheets command surface (#2572)
+
+### Misc
+
+- Feat/okr comment (#2558)
+
+## [v1.0.92] - 2026-08-28
+
+### Features
+
+- **sheets**: add +cond-format-result-get and --include conditional_format (#2502)
+- **im**: support rich-text message attachment zone in send/reply/mge… (#2515)
+
+### Bug Fixes
+
+- **slides**: relax office token length check from 28 to >=25 (#2531)
+- **sheets**: make image-upload previews match what Execute sends (#2537)
+- **sheets**: suppress multipart stderr noise and tighten e2e boundary test (#2550)
+
+### Refactoring
+
+- **sheets**: keep the success path off stderr (#2533)
+
 ## [v1.0.91] - 2026-08-27
 
 ### Features
@@ -2038,6 +2177,11 @@ Bundled AI agent skills for intelligent assistance:
 - Bilingual documentation (English & Chinese).
 - CI/CD pipelines: linting, testing, coverage reporting, and automated releases.
 
+[v1.0.96]: https://github.com/larksuite/cli/releases/tag/v1.0.96
+[v1.0.95]: https://github.com/larksuite/cli/releases/tag/v1.0.95
+[v1.0.94]: https://github.com/larksuite/cli/releases/tag/v1.0.94
+[v1.0.93]: https://github.com/larksuite/cli/releases/tag/v1.0.93
+[v1.0.92]: https://github.com/larksuite/cli/releases/tag/v1.0.92
 [v1.0.91]: https://github.com/larksuite/cli/releases/tag/v1.0.91
 [v1.0.90]: https://github.com/larksuite/cli/releases/tag/v1.0.90
 [v1.0.89]: https://github.com/larksuite/cli/releases/tag/v1.0.89
