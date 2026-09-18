@@ -26,6 +26,13 @@ metadata:
 
 shortcut 名称只能来自本 Skill 的 Shortcut 表或 `lark-cli task --help`；原生 resource/method 以逐级 help 为准，参数名、类型和嵌套结构以 method schema 为准。
 
+## 字段与关系所有权（必读）
+
+- 任务标题、描述、日期等任务本体字段只有在 `+update --print-schema --flag-name data` 的 schema 中出现时，才可通过 `+update --data` 更新。
+- 对已有任务的负责人、执行人或 assignee 进行新增、移除、替换或转交时，必须使用 [`+assign`](references/lark-task-assign.md)。创建任务时可直接使用 `+create --assignee`；替换已有任务的负责人时，在同一条 `+assign` 命令中使用 `--remove <old>` 和 `--add <new>`。
+- 任务查询结果中的 `members` 是成员关系输出，不代表它是可写字段；禁止把 `members` 传入 `+update --data`，也禁止从查询结果反推其他更新参数。
+- 关注人、提醒和清单成员关系分别由 `+followers`、`+reminder` 和 `+tasklist-members` 管理，不通过 `+update --data` 修改。
+
 > **任务搜索技巧**：先区分用户是否**特地指定使用搜索 skill**，以及是否真的提供了**查询关键字**（例如任务名称、关键词、片段描述）。如果用户特地指定使用搜索 skill，或明确给出了任务查询关键字，则目标是**任务**时优先使用 `+search`。如果用户没有特地指定使用搜索 skill，且意图里没有查询关键字，只有范围条件（例如“今年以来”“已完成”“由我创建”“我关注的”），并且使用 `+search` 与 `+get-related-tasks` / `+get-my-tasks` 都能达到目的时，应优先使用列表型能力，而不是搜索型能力。其中，“与我相关 / 我关注的 / 由我创建”等优先考虑 `+get-related-tasks`；“我负责的 / 分配给我”的列表优先考虑 `+get-my-tasks`。不要把时间范围词（例如“今年以来”）本身误当成 `query` 去走搜索。
 > **任务搜索相关性提示**：`+search` 当前不会自动判断搜索结果与搜索发起人的相关性。如果用户明确要求搜索“与我相关”的任务，必须先识别具体关系，获取当前用户的 `open_id`，并显式传入对应的 `--assignee`（负责人）、`--creator`（创建人）或 `--follower`（关注人）过滤条件；不能只依赖 `query` 期待自动返回与当前用户相关的任务。
 > **任务清单搜索技巧**：任务清单也遵循同样的判断逻辑。先区分用户是否**特地指定使用搜索 skill**，以及是否真的提供了**清单查询关键字**（例如清单名称、关键词、片段描述）。如果用户特地指定使用搜索 skill，或明确给出了清单查询关键字，则优先使用 `+tasklist-search`。如果用户没有特地指定使用搜索 skill，且意图里没有查询关键字，只有范围条件（例如“由我创建的任务清单”“今年以来创建的清单”），并且使用搜索或原生列取清单都能达到目的时，应优先使用原生 `tasklists.list` 接口列取清单（先 `schema task.tasklists.list`，再 `lark-cli task tasklists list --as user ...`），再按 `creator`、`created_at` 等字段做本地筛选和分页控制。
@@ -62,12 +69,12 @@ shortcut 名称只能来自本 Skill 的 Shortcut 表或 `lark-cli task --help`�
 | Shortcut | 说明 |
 |----------|------|
 | [`+create`](references/lark-task-create.md) | create a task |
-| [`+update`](references/lark-task-update.md) | update task attributes |
+| [`+update`](references/lark-task-update.md) | update schema-supported task fields; use `+assign` for assignees |
 | [`+set-ancestor`](references/lark-task-set-ancestor.md) | set or clear a task ancestor |
 | [`+comment`](references/lark-task-comment.md) | add a comment to a task |
 | [`+complete`](references/lark-task-complete.md) | mark a task as complete |
 | [`+reopen`](references/lark-task-reopen.md) | reopen a completed task |
-| [`+assign`](references/lark-task-assign.md) | assign or remove task members |
+| [`+assign`](references/lark-task-assign.md) | add, remove, or replace task assignees |
 | [`+followers`](references/lark-task-followers.md) | manage task followers |
 | [`+reminder`](references/lark-task-reminder.md) | manage task reminders |
 | [`+get-my-tasks`](references/lark-task-get-my-tasks.md) | List tasks assigned to me |

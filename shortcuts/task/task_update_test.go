@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/larksuite/cli/errs"
@@ -47,6 +48,38 @@ func TestUpdateTaskExposesDataSchemaDiscovery(t *testing.T) {
 	for _, flag := range []string{"print-schema", "flag-name"} {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("+update flag --%s is missing", flag)
+		}
+	}
+}
+
+func TestTaskShortcutHelpSeparatesPatchFieldsFromAssigneeRelationships(t *testing.T) {
+	f, _, _, _ := taskShortcutTestFactory(t)
+	parent := &cobra.Command{Use: "task"}
+	UpdateTask.Mount(parent, f)
+	AssignTask.Mount(parent, f)
+
+	updateCmd, _, err := parent.Find([]string{"+update"})
+	if err != nil {
+		t.Fatalf("find +update: %v", err)
+	}
+	if !strings.Contains(updateCmd.Short, "schema-supported task fields") {
+		t.Fatalf("+update summary = %q, want schema-supported field boundary", updateCmd.Short)
+	}
+	if !strings.Contains(updateCmd.Short, "+assign") {
+		t.Fatalf("+update summary = %q, want assignee operations routed to +assign", updateCmd.Short)
+	}
+	dataFlag := updateCmd.Flags().Lookup("data")
+	if dataFlag == nil || !strings.Contains(dataFlag.Usage, "--print-schema") {
+		t.Fatalf("+update --data usage = %#v, want schema discovery guidance", dataFlag)
+	}
+
+	assignCmd, _, err := parent.Find([]string{"+assign"})
+	if err != nil {
+		t.Fatalf("find +assign: %v", err)
+	}
+	for _, term := range []string{"add", "remove", "replace", "assignees"} {
+		if !strings.Contains(assignCmd.Short, term) {
+			t.Errorf("+assign summary = %q, want %q", assignCmd.Short, term)
 		}
 	}
 }

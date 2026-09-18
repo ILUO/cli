@@ -20,7 +20,7 @@ import (
 var UpdateTask = common.Shortcut{
 	Service:     "task",
 	Command:     "+update",
-	Description: "update task attributes",
+	Description: "update schema-supported task fields; use +assign for assignees",
 	Risk:        "write",
 	Scopes:      []string{"task:task:write"},
 	AuthTypes:   []string{"user", "bot"},
@@ -31,7 +31,7 @@ var UpdateTask = common.Shortcut{
 		{Name: "summary", Desc: "task title"},
 		{Name: "description", Desc: "task description"},
 		{Name: "due", Desc: "due date (ISO 8601 / date:YYYY-MM-DD / relative:+2d / ms timestamp)"},
-		{Name: "data", Desc: "JSON payload for task object"},
+		{Name: "data", Desc: "JSON object containing only fields exposed by --print-schema"},
 	},
 	PrintFlagSchema: printTaskUpdateDataFlagSchema,
 
