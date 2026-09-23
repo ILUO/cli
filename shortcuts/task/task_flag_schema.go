@@ -16,7 +16,11 @@ import (
 const taskUpdateMethodPath = "task.tasks.patch"
 
 func printTaskUpdateDataFlagSchema(flagName string) ([]byte, error) {
-	return taskUpdateDataFlagSchema(registry.SchemaCatalog(), flagName)
+	snapshot, err := registry.OpenSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	return taskUpdateDataFlagSchema(snapshot.Catalog(), flagName)
 }
 
 func taskUpdateDataFlagSchema(catalog apicatalog.Catalog, flagName string) ([]byte, error) {
@@ -51,7 +55,7 @@ func taskUpdateDataFlagSchema(catalog apicatalog.Catalog, flagName string) ([]by
 		return nil, validationErr
 	}
 
-	envelope := metaschema.EnvelopeOf(*target.Method)
+	envelope := metaschema.EnvelopeOf(nil, *target.Method)
 	path := append([]string{"data", "task"}, requested[1:]...)
 	property, ok := taskUpdateInputSchemaProperty(envelope.InputSchema, path)
 	if !ok {

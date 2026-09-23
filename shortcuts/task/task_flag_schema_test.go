@@ -89,3 +89,19 @@ func TestTaskUpdateDataFlagSchemaListsAndValidatesFlag(t *testing.T) {
 		t.Fatal("taskUpdateDataFlagSchema(unknown) error = nil, want validation error")
 	}
 }
+
+func TestPrintTaskUpdateDataFlagSchemaUsesEmbeddedCatalog(t *testing.T) {
+	raw, err := printTaskUpdateDataFlagSchema("data.due.timestamp")
+	if err != nil {
+		t.Fatalf("printTaskUpdateDataFlagSchema(data.due.timestamp) error = %v", err)
+	}
+	var schema struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("decode schema: %v\n%s", err, raw)
+	}
+	if schema.Type != "string" {
+		t.Fatalf("embedded task due timestamp schema type = %q, want string", schema.Type)
+	}
+}
