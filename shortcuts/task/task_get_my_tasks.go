@@ -20,7 +20,7 @@ import (
 var GetMyTasks = common.Shortcut{
 	Service:     "task",
 	Command:     "+get-my-tasks",
-	Description: "List tasks assigned to me",
+	Description: "list tasks assigned to me only",
 	Risk:        "read",
 	Scopes:      []string{"task:task:read"},
 	AuthTypes:   []string{"user"},

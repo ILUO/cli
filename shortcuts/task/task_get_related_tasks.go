@@ -23,7 +23,7 @@ const (
 var GetRelatedTasks = common.Shortcut{
 	Service:     "task",
 	Command:     "+get-related-tasks",
-	Description: "list tasks related to me",
+	Description: "list tasks related to me, including created and followed tasks",
 	Risk:        "read",
 	Scopes:      []string{"task:task:read"},
 	AuthTypes:   []string{"user"},
