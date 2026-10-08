@@ -1,75 +1,75 @@
 # task sections
 
-> 开始前读取 [共享规则](../../lark-shared/SKILL.md)，确认认证、身份和操作安全规则。
+> **Prerequisites:** Read the [shared rules](../../lark-shared/SKILL.md) for authentication, identity, and operation safety.
 
-## 适用范围与操作导航
+## Scope and operation guide
 
-本文按 method 组织 Task `sections` 资源的操作流程，当前提供分组定位和组内任务查询。分组的概念与归属判断见 [主 Skill](../SKILL.md)；接口参数、权限和返回结构以当前 CLI 的 Catalog/schema 为准。
+This reference organizes Task `sections` workflows by Catalog method. It currently covers locating sections and listing their tasks. See the [main Skill](../SKILL.md) for group terminology and ownership routing. The current CLI Catalog/schema is authoritative for parameters, permissions, and response fields.
 
-| 用户目标 | 阅读章节 |
+| User goal | Read |
 |----------|----------|
-| 列取指定归属下的分组，或按名称定位分组 | [sections.list](#sectionslist) |
-| 查询已选定分组中的任务 | [sections.tasks](#sectionstasks) |
+| List sections in a resource or locate a section by name | [sections.list](#sectionslist) |
+| List tasks in a selected section | [sections.tasks](#sectionstasks) |
 
-## 共用规则
+## Shared rules
 
-1. 按主 Skill 的发现流程运行 `lark-cli task --help` 和 `lark-cli task sections --help`，确认 method 后读取对应 schema，再执行原生命令。
-2. 代表当前用户查询个人“我的任务”时，使用 `--as user`；其他操作的身份和权限要求按共享规则及对应 method 的 help/schema 确认。
-3. 对支持分页的查询，完整列取时使用 `--page-all --page-limit 0`，避免默认页数上限造成遗漏。查询中断或返回部分失败时，说明结果尚不完整，不能断言分组或任务不存在。
+1. Follow the main Skill's discovery flow: run `lark-cli task --help` and `lark-cli task sections --help`, confirm the method, and read its schema before executing a native command.
+2. Use `--as user` when querying the current user's personal "My Tasks". For other operations, confirm identity and permissions through the shared rules and the method's help/schema.
+3. For queries that support pagination, use `--page-all --page-limit 0` when a complete listing is required. This avoids the default page limit. If the query is interrupted or partially fails, report that results are incomplete; do not conclude that a section or task does not exist.
 
 ## sections.list
 
-### 适用场景
+### When to use
 
-需要列取“我的任务”或指定清单下的分组，或按分组名称取得目标 GUID。
+List sections in "My Tasks" or a specific tasklist, or resolve a section name to its GUID.
 
-### 前置信息
+### Prerequisites
 
-- “我的任务”：使用 `my_tasks` 归属，无需清单 GUID 或 `resource_id`。
-- 指定清单：使用 `tasklist` 归属，需要清单 GUID。已知 GUID 时直接使用；只有清单名称时，先按主 Skill 的清单定位流程取得 GUID。
-- 归属不明时，先结合上下文判断，仍不明确再询问归属。分组名称用于匹配分组，不用作清单搜索词。
+- "My Tasks": use `my_tasks`; no tasklist GUID or `resource_id` is needed.
+- A specific tasklist: use `tasklist` and provide its GUID. Use a known GUID directly. If only the tasklist name is available, follow the main Skill's tasklist lookup flow first.
+- Resolve unclear ownership from context; ask for the owning resource if it remains unclear. Match a section name against sections, rather than using it as a tasklist search term.
 
-### 执行示例
+### Examples
 
-**查询“我的任务”中的分组**
+**List sections in "My Tasks"**
 
 ```bash
 lark-cli schema task.sections.list
 lark-cli task sections list --resource-type my_tasks --as user --page-all --page-limit 0
 ```
 
-**查询指定清单中的分组**
+**List sections in a specific tasklist**
 
 ```bash
 lark-cli schema task.sections.list
 lark-cli task sections list --resource-type tasklist --resource-id "<tasklist_guid>" --as user --page-all --page-limit 0
 ```
 
-### 结果处理
+### Result handling
 
-从返回的 `items` 中按 `name` 定位分组，取其 `guid` 作为 `section_guid`。同名候选展示 GUID 和已知归属，由用户确定目标；完整列取后仍找不到时，说明该归属下未找到目标分组，不自动扫描其他清单。
+Match `name` in the returned `items`, and use the selected item's `guid` as `section_guid`. If names are duplicated, show candidate GUIDs and their known ownership so the user can select the target. If a complete listing has no match, report that the section was not found in that resource; do not automatically scan other tasklists.
 
 ## sections.tasks
 
-### 适用场景
+### When to use
 
-用户要求查询某个分组中的任务。
+The user wants to list tasks in a section.
 
-### 前置信息
+### Prerequisites
 
-需要目标 `section_guid`。已知分组 GUID 时直接使用；仅有名称时，先按 [sections.list](#sectionslist) 定位分组，无需为已知 GUID 再次查询分组或清单。
+The target `section_guid` is required. Use a known GUID directly. If only the section name is available, locate it with [sections.list](#sectionslist) first. A known section GUID does not require another section or tasklist lookup.
 
-### 执行示例
+### Examples
 
 ```bash
 lark-cli schema task.sections.tasks
 lark-cli task sections tasks --section-guid "<section_guid>" --as user --page-all --page-limit 0
 ```
 
-### 结果处理
+### Result handling
 
-按用户要求展示返回的组内任务；完成分页后再报告完整结果，查询未完成时明确说明结果不完整。
+Present the returned tasks as requested. Report a complete result only after pagination finishes; otherwise, state that the results are incomplete.
 
-## 后续补充约定
+## Adding operation guidance
 
-新增 section 操作时，以 Catalog 的 method 标识增加 `## sections.<method>` 章节，并同步更新操作导航。每个操作沿用“适用场景 → 前置信息 → 执行示例 → 结果处理”的顺序；共用规则保留在本文前部，场景差异写在对应操作内。执行示例先展示 schema 发现，参数、权限和返回字段的完整定义继续由 schema 提供。
+For each added operation, create a `## sections.<method>` chapter using its Catalog method identifier and update the operation guide. Use the same subsection order: **When to use → Prerequisites → Examples → Result handling**. Keep shared rules at the start of this reference and operation-specific differences in the relevant chapter. Examples must show schema discovery before execution; leave complete parameter, permission, and response definitions to the schema.
