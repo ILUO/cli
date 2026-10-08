@@ -5,8 +5,10 @@ package task
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
+	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/apicatalog"
 	"github.com/larksuite/cli/internal/meta"
 )
@@ -28,6 +30,12 @@ func TestTaskUpdateDataFlagSchemaProjectsTaskInput(t *testing.T) {
 											Type: "object",
 											Properties: map[string]meta.Field{
 												"timestamp": {Type: "string"},
+											},
+										},
+										"custom_fields": {
+											Type: "array",
+											Properties: map[string]meta.Field{
+												"guid": {Type: "string"},
 											},
 										},
 									},
@@ -56,16 +64,20 @@ func TestTaskUpdateDataFlagSchemaProjectsTaskInput(t *testing.T) {
 		t.Fatalf("projected schema = %#v, want task object only", schema)
 	}
 
-	nested, err := taskUpdateDataFlagSchema(catalog, "data.due.timestamp")
-	if err != nil {
-		t.Fatalf("taskUpdateDataFlagSchema(data.due.timestamp) error = %v", err)
-	}
-	var timestampSchema map[string]interface{}
-	if err := json.Unmarshal(nested, &timestampSchema); err != nil {
-		t.Fatalf("decode nested schema: %v\n%s", err, nested)
-	}
-	if timestampSchema["type"] != "string" {
-		t.Fatalf("nested schema = %#v, want string", timestampSchema)
+	for _, flagName := range []string{"data.due.timestamp", "data.custom_fields.guid"} {
+		t.Run(flagName, func(t *testing.T) {
+			nested, err := taskUpdateDataFlagSchema(catalog, flagName)
+			if err != nil {
+				t.Fatalf("taskUpdateDataFlagSchema(%s) error = %v", flagName, err)
+			}
+			var nestedSchema map[string]interface{}
+			if err := json.Unmarshal(nested, &nestedSchema); err != nil {
+				t.Fatalf("decode nested schema: %v\n%s", err, nested)
+			}
+			if nestedSchema["type"] != "string" {
+				t.Fatalf("nested schema = %#v, want string", nestedSchema)
+			}
+		})
 	}
 }
 
@@ -85,8 +97,14 @@ func TestTaskUpdateDataFlagSchemaListsAndValidatesFlag(t *testing.T) {
 	if string(listed) == "" {
 		t.Fatal("taskUpdateDataFlagSchema(list) returned empty output")
 	}
-	if _, err := taskUpdateDataFlagSchema(catalog, "unknown"); err == nil {
-		t.Fatal("taskUpdateDataFlagSchema(unknown) error = nil, want validation error")
+	_, err = taskUpdateDataFlagSchema(catalog, "unknown")
+	problem, ok := errs.ProblemOf(err)
+	if !ok || problem.Category != errs.CategoryValidation || problem.Subtype != errs.SubtypeInvalidArgument {
+		t.Fatalf("error = %T %v, want typed invalid-argument error", err, err)
+	}
+	var validationErr *errs.ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Param != "--flag-name" {
+		t.Fatalf("error param = %#v, want --flag-name", validationErr)
 	}
 }
 
